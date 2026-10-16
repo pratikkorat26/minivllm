@@ -33,8 +33,10 @@ def app_error_to_api_error(error: AppError) -> APIError:
     status_code = 500
     if error.code == "max_tokens_exceeded" or error.code == "context_length_exceeded":
         status_code = 400
-    elif error.code == "capacity_exceeded":
+    elif error.code in ("capacity_exceeded", "queue_full"):
         status_code = 429
+    elif error.code == "timeout":
+        status_code = 504
     return APIError(
         error.message,
         status_code=status_code,

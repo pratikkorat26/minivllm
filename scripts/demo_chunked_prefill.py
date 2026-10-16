@@ -13,7 +13,9 @@ from inference import EngineConfig, GenerateRequest, LLMEngine, SamplingConfig
 from runtime import GemmaRuntime, get_device
 
 
-def build_engine(runtime: GemmaRuntime, *, prefill_chunk_size: Optional[int]) -> LLMEngine:
+def build_engine(
+    runtime: GemmaRuntime, *, prefill_chunk_size: Optional[int]
+) -> LLMEngine:
     return LLMEngine(
         runtime=runtime,
         config=EngineConfig(
@@ -31,7 +33,9 @@ def build_engine(runtime: GemmaRuntime, *, prefill_chunk_size: Optional[int]) ->
     )
 
 
-async def run_case(runtime: GemmaRuntime, *, prompt: str, prefill_chunk_size: Optional[int]) -> dict:
+async def run_case(
+    runtime: GemmaRuntime, *, prompt: str, prefill_chunk_size: Optional[int]
+) -> dict:
     engine = build_engine(runtime, prefill_chunk_size=prefill_chunk_size)
     started = time.perf_counter()
     result = await engine.generate(GenerateRequest("case", prompt))
@@ -67,7 +71,8 @@ async def benchmark_case(
 ) -> dict:
     for _ in range(max(0, warmup_runs)):
         engine = build_engine(runtime, prefill_chunk_size=prefill_chunk_size)
-        await engine.generate(GenerateRequest("warmup", prompt)); await engine.shutdown()
+        await engine.generate(GenerateRequest("warmup", prompt))
+        await engine.shutdown()
 
     elapsed_values = []
     last_result = None
@@ -81,7 +86,9 @@ async def benchmark_case(
         await engine.shutdown()
 
     avg_elapsed_s = sum(elapsed_values) / len(elapsed_values)
-    avg_tok_per_s = 0.0 if avg_elapsed_s <= 0 else len(last_result.token_ids) / avg_elapsed_s
+    avg_tok_per_s = (
+        0.0 if avg_elapsed_s <= 0 else len(last_result.token_ids) / avg_elapsed_s
+    )
     return {
         "prefill_chunk_size": prefill_chunk_size,
         "avg_elapsed_s": avg_elapsed_s,
@@ -93,11 +100,27 @@ async def benchmark_case(
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(description="Show chunked-prefill behavior on one prompt")
-    parser.add_argument("--chunk-size", type=int, default=16, help="Prefill chunk size for the chunked run")
-    parser.add_argument("--repeat", type=int, default=40, help="How many times to repeat the seed text")
-    parser.add_argument("--warmup-runs", type=int, default=1, help="Warmup runs before timing")
-    parser.add_argument("--benchmark-runs", type=int, default=3, help="Number of timed runs for each case")
+    parser = argparse.ArgumentParser(
+        description="Show chunked-prefill behavior on one prompt"
+    )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=16,
+        help="Prefill chunk size for the chunked run",
+    )
+    parser.add_argument(
+        "--repeat", type=int, default=40, help="How many times to repeat the seed text"
+    )
+    parser.add_argument(
+        "--warmup-runs", type=int, default=1, help="Warmup runs before timing"
+    )
+    parser.add_argument(
+        "--benchmark-runs",
+        type=int,
+        default=3,
+        help="Number of timed runs for each case",
+    )
     parser.add_argument(
         "--prompt",
         default="Explain KV cache reuse in one short paragraph. ",

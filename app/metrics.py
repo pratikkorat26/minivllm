@@ -31,9 +31,13 @@ class ServiceMetrics:
                 "last_prefill_s": float(getattr(result, "prefill_s", 0.0)),
                 "last_decode_s": float(getattr(result, "decode_s", 0.0)),
                 "last_total_latency_s": float(getattr(result, "total_latency_s", 0.0)),
-                "last_model_tokens_per_s": float(getattr(result, "model_tokens_per_s", 0.0)),
+                "last_model_tokens_per_s": float(
+                    getattr(result, "model_tokens_per_s", 0.0)
+                ),
                 "last_prefill_steps": int(getattr(result, "prefill_steps", 0)),
                 "last_decode_steps": int(getattr(result, "decode_steps", 0)),
+                "last_ttft_s": getattr(result, "ttft_s", None),
+                "last_tpot_s": getattr(result, "tpot_s", None),
                 "last_stop_reason": getattr(result, "stop_reason", None),
             }
 
@@ -53,7 +57,11 @@ class ServiceMetrics:
 
     def snapshot(self) -> dict:
         with self._lock:
-            avg_latency = self.latency_total_s / self.requests_total if self.requests_total else 0.0
+            avg_latency = (
+                self.latency_total_s / self.requests_total
+                if self.requests_total
+                else 0.0
+            )
             return {
                 "model": self.model,
                 "requests_total": self.requests_total,

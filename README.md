@@ -1,138 +1,157 @@
-# Gemma 3 270M: Minimal vLLM-Style Inference
+# MiniVLLM: a compact Gemma inference engine
 
-A readable, single-process PyTorch inference stack for **Gemma-3-270M / 270M-IT**, with paged KV cache, continuous decode batching, optional prefix caching, and an OpenAI-compatible FastAPI server.
+A single-device PyTorch engine implementing request scheduling, paged KV storage,
+prefix sharing and an OpenAI-compatible chat API. Gemma 3 270M tensor execution,
+scheduling and memory management are implemented here, rather than delegated to
+an inference library. Developed and measured on an **RTX 4070 Laptop, 8 GB, SM89**.
 
-Default branch: **`main`**.
+## Implemented
 
-## Purpose
+- Continuous **ragged decode batching**, fair across sampling cohorts.
+- A token budget shared by decode and chunked prefill, with progress for both phases.
+- KV-aware admission reserving maximum request growth; bounded outstanding requests.
+- Physical KV pages, logical block tables, whole-page prefix sharing, reference
+  counting, LRU eviction under memory pressure, cancellation and cleanup.
+- Vectorized KV writes/gathers and RoPE; PyTorch SDPA with grouped-query attention.
+- Last-position output projection; intermediate chunks skip the output head.
+- One model worker, async JSON/SSE, bounded stream buffers, disconnect handling,
+  split stop-string buffering, and shutdown that joins in-flight work.
+- TTFT/TPOT, scheduler/KV metrics, saved GPU measurements, independent reference tests.
 
-- Decoder-only inference with **block-based paged KV**
-- **Continuous multi-request scheduling** (decode-centric)
-- **OpenAI-compatible** local chat API with readiness, stats, and metrics
-- Small enough to read end-to-end; structured like a production serving path
+**Paged storage is implemented; fused paged attention is not.** Attention gathers
+dense KV before SDPA. Explicit CUDA graphs, batched ragged prefill, preemption,
+speculative decoding, quantization and multi-GPU execution are outside this version.
 
-## Quick start
+## Run
+
+Python 3.10+ and PyTorch 2.5+. Install the appropriate PyTorch build for your GPU,
+then:
 
 ```bash
-python -m pip install -e ".[dev,benchmark]"
-
-# CLI generation
-python main.py --prompt "Say hello in one short sentence." --max-new-tokens 64
-# or: gemma3-generate
-
-# OpenAI-compatible server (default 127.0.0.1:8000)
+python -m pip install -e ".[dev,benchmark,reference]"
+python main.py --prompt "Explain KV caching in one sentence." --max-new-tokens 32
 python -m adapters.openai.run
-# or: gemma3-serve
-
-python query_fastapi.py --stream --prompt "Give me one short line about LLM inference."
+python query_fastapi.py --stream --prompt "Explain continuous batching."
 ```
 
-Tune with CLI flags or `GEMMA_API_*` env vars:
+CLI and server default to `google/gemma-3-270m-it`. Accept its Hugging Face license
+and authenticate, or put `model.safetensors` and `tokenizer.json` in
+`gemma-3-270m-it/`. CLI `--no-instruct` uses the base checkpoint in
+`gemma-3-270m/`. Only 270M is supported. Use the default instruct configuration for
+chat serving; the chat API advertises the instruct model.
+
+CUDA uses BF16; CPU uses FP32. Compilation is **opt in** via
+`GEMMA_ENABLE_COMPILE=1`; it is experimental and unbenchmarked. The tested Windows
+path uses eager PyTorch and requires neither Triton nor a CUDA compiler.
+
+## Architecture and lifecycle
+
+```mermaid
+flowchart LR
+    HTTP[OpenAI HTTP / SSE] --> App[Prompt and stop handling]
+    App --> Engine[LLMEngine API]
+    Engine --> Scheduler[Token budget scheduler]
+    Scheduler --> Worker[Single model worker]
+    Worker --> Model[Gemma + PyTorch SDPA]
+    Worker --> KV[Block allocator + prefix cache]
+    KV --> Pages[Per-layer physical KV pages]
+    Model --> Pages
+```
+
+1. The adapter validates; the app formats the Gemma prompt.
+2. The engine tokenizes, creates a future and enqueues the request.
+3. FIFO admission reserves pages for prompt and maximum generation. Cached whole
+   pages may be shared; cache references can be evicted to make room.
+4. Each tick runs a decode cohort, then prefills using the remaining token budget.
+   If decode consumes the budget, the next turn serves prefill.
+5. The worker builds metadata, writes KV, runs attention and samples. Decode IDs
+   are copied to CPU once per batch. Prefill remains one request per forward.
+6. JSON resolves the future; SSE consumes a bounded event queue. Completion,
+   cancellation, timeout and errors release request references. Cache references
+   retain reusable pages until eviction or shutdown.
+
+The synchronous executor contains no asyncio. Model/KV mutation never overlaps;
+HTTP handlers can run during model steps. See [architecture](docs/architecture.md),
+the [pre-change audit](docs/audit.md), and the [study guide](docs/study.md).
+
+## Measurements
+
+Actual local measurements: Gemma 270M **base**, BF16, PyTorch 2.7.1+cu128, Windows
+WDDM, RTX 4070 Laptop, greedy decoding, four short prompts, 16-token output cap,
+three closed-loop waves per concurrency. Prefix caching and compilation disabled.
+
+| Concurrency | Baseline tokens/s | Improved tokens/s |
+|---:|---:|---:|
+| 1 | 28.47 | 26.01 |
+| 2 | 46.59 | 47.53 |
+| 4 | 73.29 | 80.91 |
+| 8 | 76.93 | 91.47 |
+
+![Measured throughput, TTFT and TPOT](docs/figures/engine.png)
+
+Higher concurrency benefits from ragged batching and fewer layer-level CPU/GPU
+synchronizations. Single-request throughput did not improve in this run. These
+small samples are not capacity/SLO guarantees. Read the
+[methodology and raw results](benchmarks/README.md) before interpreting the figures.
 
 ```bash
-python -m adapters.openai.run --host 0.0.0.0 --port 8080 --device cpu --default-max-tokens 64
-GEMMA_API_MAX_KV_CACHE_TOKENS=65536 python -m adapters.openai.run
+python scripts/benchmark_engine.py --output benchmarks/my_engine.json
+python scripts/benchmark_attention.py --output benchmarks/my_attention.json
+python scripts/plot_benchmarks.py
 ```
 
-Model access: approve Gemma checkpoints on Hugging Face (`google/gemma-3-270m` / `google/gemma-3-270m-it`). Local folders `gemma-3-270m/` / `gemma-3-270m-it/` are reused when present.
+There is **no measured vLLM comparison**. A shared HTTP workload runner and
+comparison instructions are provided in [benchmarks/README.md](benchmarks/README.md).
+No relative vLLM performance is claimed.
 
-## Architecture (summary)
-
-```text
-adapters/openai  →  app  →  inference (LLMEngine)  →  runtime  →  gemma3
-     HTTP              service         scheduler+executor         load          tensors
-```
-
-| Layer | Path | Role |
-|-------|------|------|
-| HTTP | [`adapters/openai/`](adapters/openai/) | FastAPI routes, schemas, SSE — no `torch` |
-| App | [`app/`](app/) | Prompting, validation, metrics, chat orchestration |
-| Inference | [`inference/`](inference/) | `LLMEngine`, `AsyncScheduler`, `PagedModelExecutor`, KV, sampling |
-| Runtime | [`runtime/`](runtime/) | Device/dtype policy, weight download, tokenizer |
-| Model | [`gemma3/`](gemma3/) | 18-layer Gemma3, GQA attention, paged KV tensors, RoPE, MLP |
-
-**Design rule:** inference is deep; HTTP is thin. Enforced by [`tests/architecture/`](tests/architecture/).
-
-Full diagrams and lifecycle details: **[`docs/architecture.md`](docs/architecture.md)**.
-
-### Request path
-
-1. `POST /v1/chat/completions` → `ChatCompletionService`
-2. Prompt build → `LLMEngine.generate` / `stream`
-3. `AsyncScheduler`: admit → **prefill** (one request, optional chunks) → **decode** cohorts
-4. `PagedModelExecutor`: grow KV blocks, forward, sample last-token logits
-5. JSON or SSE response
-
-### Performance notes
-
-- **Default device:** CUDA if available, otherwise **CPU** (MPS is opt-in; currently slower for this paged path)
-- **Dtype:** `bfloat16` on CUDA, **`float32` on CPU/MPS**
-- **`torch.compile`:** CUDA only (`GEMMA_DISABLE_COMPILE=1` to skip)
-- Last-token LM head only; intermediate prefill chunks skip `out_head`
-- Microbench: `python scripts/benchmark_decode_throughput.py --max-new-tokens 64`
-
-## Engine configuration
-
-| Setting | Meaning |
-|---------|---------|
-| `max_kv_cache_tokens` / `kv_block_size` / `num_kv_blocks` | Paged KV budget |
-| `enable_prefix_cache` / `max_prefix_cache_entries` | Opt-in prefix KV reuse (default off) |
-| `max_queue_size` / `max_concurrent_requests` | Admission limits |
-| `decode_batch_size` / `max_batch_tokens` | Decode cohort caps |
-| `prefill_chunk_size` | Max tokens per prefill step (`None` = whole remainder) |
-| `request_timeout_s` | Per-request timeout |
-
-Continuous batching is **decode-centric**: prefill is one-at-a-time (optionally chunked); decode batches share sequence length + sampling params.
-
-Public engine API:
-
-- `await generate(request) -> GenerateResult`
-- `stream(request) -> AsyncIterator[StreamEvent]`
-- `await abort(request_id)` / `stats()` / `await shutdown()`
-
-## API
-
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /healthz` | Liveness |
-| `GET /readyz` | Ready after service load |
-| `GET /v1/models` | Model listing |
-| `GET /stats` | JSON counters (+ prefix-cache fields) |
-| `GET /metrics` | Prometheus text |
-| `POST /v1/chat/completions` | Chat (stream or JSON) |
-
-Chat controls: `max_tokens`, `temperature`, `top_p`, `top_k`, `repetition_penalty`, `seed`, `stop`, `stream`, `stream_options.include_usage`.
-
-## Project layout
-
-```text
-gemma3/           model + paged KV + RoPE + MLP
-inference/        engine, executor, scheduler, kv/, sampling/
-runtime/          GemmaRuntime, device/dtype
-app/              ChatCompletionService
-adapters/openai/  FastAPI OpenAI adapter
-config/           ServerSettings / RuntimeSettings
-scripts/          benches (decode, concurrent, chunked prefill)
-tests/            architecture, contract, unit, opt-in real-engine
-docs/architecture.md
-main.py           CLI entry (gemma3-generate)
-```
-
-## Validation
+## Validate
 
 ```bash
 python -m pytest -q
+python -m ruff check inference gemma3 app adapters scripts
+python scripts/validate_reference.py --model-dir gemma-3-270m
 ```
 
-Coverage includes import boundaries, engine contract, continuous batching, prefix cache, OpenAI shapes, and runtime config.
+Tests include fake-runtime contracts, independent dense attention on CPU/CUDA,
+and optional Transformers tiny-model reference logits without downloads. With
+local base weights:
 
-Opt-in real model tests:
-
-```bash
-RUN_REAL_ENGINE_TESTS=1 python -m pytest -q tests/test_llmengine_regression_real.py
-RUN_REAL_ENGINE_TESTS=1 RUN_REAL_ENGINE_LOAD_TESTS=1 python -m pytest -q tests/test_llmengine_load_real.py
+```powershell
+$env:RUN_LOCAL_MODEL_TESTS="1"
+python -m pytest -q
 ```
 
-## Scope / non-goals
+FP32 reference validation matched 24/24 tested greedy positions, maximum absolute
+logit error about 2e-5. **BF16 is not exactly reference invariant:** recorded eager
+and SDPA comparisons match 23/24 positions. Strict BF16 validation returns nonzero
+for that mismatch; raw results are retained. Real-model tests separately verify
+this engine's serial/batched, streamed, chunked and cached paths. These checks do
+not establish equivalence for every input or precision.
 
-Single-device, single-process prototype. Not a full vLLM clone: no batched prefill, no multi-GPU, no CUDA-graph-heavy serving, limited prefix-cache tenant isolation (`scope` hard-coded to `"default"`).
+## Configuration, observability and tradeoffs
+
+Existing CLI flags and `GEMMA_API_*` variables remain supported. Main controls:
+`MAX_BATCH_TOKENS`, `PREFILL_CHUNK_SIZE`, `DECODE_BATCH_SIZE`,
+`MAX_CONCURRENT_REQUESTS`, `MAX_QUEUE_SIZE`, `MAX_KV_CACHE_TOKENS`, `KV_BLOCK_SIZE`,
+`NUM_KV_BLOCKS`, `REQUEST_TIMEOUT_S`, `ENABLE_PREFIX_CACHE`.
+`max_queue_size` bounds **all outstanding requests**, including active ones.
+`prefill_chunk_size=None` now uses the token budget as the chunk bound.
+
+Available endpoints: `/healthz`, `/readyz`, `/v1/models`, `/stats`, `/metrics`,
+`/v1/chat/completions`. KV counters distinguish physical reserved pages from live
+positions. Generation results expose `ttft_s` and `tpot_s`; benchmarks save raw
+per-request observations.
+
+Reservation reduces admission density and causes FIFO head-of-line blocking, but
+guarantees progress without preemption. Small chunks bound decode interference
+but add launches. Dense gather remains O(context) traffic even on sliding layers.
+Prefix lookup scans bounded exact entries rather than a radix tree; scope is fixed
+to `default` (trusted single tenant). Tokenization is synchronous; streaming
+detokenizes accumulated IDs for Unicode correctness. Non-streaming stop strings
+trim completed output rather than stopping computation early. HTTP body limits
+currently rely on Content-Length plus schema limits.
+
+Architectural references:
+[vLLM scheduling](https://docs.vllm.ai/en/stable/configuration/optimization/),
+[vLLM prefix caching](https://docs.vllm.ai/en/stable/design/prefix_caching/),
+[SGLang scheduling](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/managers/schedule_policy.py).

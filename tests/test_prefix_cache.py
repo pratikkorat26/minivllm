@@ -52,7 +52,7 @@ class PrefixCacheTests(unittest.TestCase):
         first, _ = cache.insert("default", [1, 2], [10, 11])
         second, _ = cache.insert("default", [1, 2], [99, 99])
         self.assertEqual(first.block_ids, (10, 11))
-        self.assertEqual(second.block_ids, (10, 11))
+        self.assertIsNone(second)
         self.assertEqual(len(cache), 1)
 
     def test_eviction_when_full(self):

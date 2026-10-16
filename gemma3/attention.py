@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Tuple
 
-from gemma3.rope import apply_rope_single
+from gemma3.rope import rotate_half
 from gemma3.paged_kv import PagedKVCache
 
 
@@ -19,7 +19,7 @@ class RMSNorm(nn.Module):
         x_f = x.float()
         var = torch.mean(x_f * x_f, dim=-1, keepdim=True)
         x_norm = x_f * torch.rsqrt(var + self.eps)
-        out = x_norm * (1.0 + self.scale)
+        out = x_norm * (1.0 + self.scale.float())
         if self.shift is not None:
             out = out + self.shift
         return out.to(orig_dtype)
@@ -46,15 +46,25 @@ class GroupedQueryAttention(nn.Module):
         self.num_kv_groups = num_kv_groups
         self.group_size = num_heads // num_kv_groups
         self.head_dim = head_dim
-        scale_base = float(query_pre_attn_scalar) if query_pre_attn_scalar is not None else float(head_dim)
-        self.scale = scale_base ** -0.5
+        scale_base = (
+            float(query_pre_attn_scalar)
+            if query_pre_attn_scalar is not None
+            else float(head_dim)
+        )
+        self.scale = scale_base**-0.5
         self.sliding_window = sliding_window
         self.rope = rope
 
         self.q_proj = nn.Linear(d_model, num_heads * head_dim, bias=False, dtype=dtype)
-        self.k_proj = nn.Linear(d_model, num_kv_groups * head_dim, bias=False, dtype=dtype)
-        self.v_proj = nn.Linear(d_model, num_kv_groups * head_dim, bias=False, dtype=dtype)
-        self.out_proj = nn.Linear(num_heads * head_dim, d_model, bias=False, dtype=dtype)
+        self.k_proj = nn.Linear(
+            d_model, num_kv_groups * head_dim, bias=False, dtype=dtype
+        )
+        self.v_proj = nn.Linear(
+            d_model, num_kv_groups * head_dim, bias=False, dtype=dtype
+        )
+        self.out_proj = nn.Linear(
+            num_heads * head_dim, d_model, bias=False, dtype=dtype
+        )
 
         self.q_norm = RMSNorm(head_dim) if qk_norm else None
         self.k_norm = RMSNorm(head_dim) if qk_norm else None
@@ -68,41 +78,18 @@ class GroupedQueryAttention(nn.Module):
         kv_lens: torch.Tensor,
         paged_kv_cache: PagedKVCache,
     ) -> None:
-        batch_size, num_kv_groups, q_len, head_dim = k_new.shape
-        block_size = paged_kv_cache.block_size
-        device = k_new.device
-
-        start_pos = kv_lens.unsqueeze(1)
-        token_offsets = torch.arange(q_len, device=device, dtype=torch.long).unsqueeze(0)
-        positions = start_pos + token_offsets
-        block_slots = positions // block_size
-        block_offsets = positions % block_size
-        block_ids = block_tables.gather(1, block_slots)
-
-        if (block_ids < 0).any():
-            raise ValueError("paged KV block table is missing an assigned block")
-
-        batch_idx_all = torch.arange(batch_size, device=device).unsqueeze(1).expand(batch_size, q_len)
-        token_idx_all = torch.arange(q_len, device=device).unsqueeze(0).expand(batch_size, q_len)
-        valid_batch = batch_idx_all.reshape(-1)
-        valid_token = token_idx_all.reshape(-1)
-        valid_offsets = block_offsets.reshape(-1)
-        valid_block_ids = block_ids.reshape(-1)
-
-        k_vals = k_new[valid_batch, :, valid_token, :]
-        v_vals = v_new[valid_batch, :, valid_token, :]
-        k_vals = k_vals.permute(1, 0, 2).reshape(num_kv_groups, batch_size * q_len, head_dim)
-        v_vals = v_vals.permute(1, 0, 2).reshape(num_kv_groups, batch_size * q_len, head_dim)
-
-        num_blocks = paged_kv_cache.k_blocks.shape[0]
-        bi = valid_block_ids.unsqueeze(0).expand(num_kv_groups, -1)
-        of = valid_offsets.unsqueeze(0).expand(num_kv_groups, -1)
-
-        k_flat = paged_kv_cache.k_blocks.view(num_kv_groups, num_blocks * block_size, head_dim)
-        v_flat = paged_kv_cache.v_blocks.view(num_kv_groups, num_blocks * block_size, head_dim)
-        idx = (bi * block_size + of).unsqueeze(-1).expand(-1, -1, head_dim)
-        k_flat.scatter_(1, idx, k_vals)
-        v_flat.scatter_(1, idx, v_vals)
+        # Storage is [physical block, KV head, token in block, head dim].
+        # Index physical pages directly; viewing this as head-major is invalid.
+        batch_size, groups, query_len, dim = k_new.shape
+        positions = kv_lens[:, None] + torch.arange(query_len, device=k_new.device)
+        ids = block_tables.gather(1, positions // paged_kv_cache.block_size)
+        offsets = positions % paged_kv_cache.block_size
+        paged_kv_cache.k_blocks[ids.reshape(-1), :, offsets.reshape(-1), :] = (
+            k_new.transpose(1, 2).reshape(-1, groups, dim)
+        )
+        paged_kv_cache.v_blocks[ids.reshape(-1), :, offsets.reshape(-1), :] = (
+            v_new.transpose(1, 2).reshape(-1, groups, dim)
+        )
 
     def _gather_batch_kv(
         self,
@@ -112,44 +99,17 @@ class GroupedQueryAttention(nn.Module):
         max_seq_len: int,
         paged_kv_cache: PagedKVCache,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Gather dense KV for a batch, right-padded to ``max_seq_len``.
+        """Vectorized dense SDPA fallback: returns [batch, KV heads, tokens, dim].
 
-        Returns:
-            k, v with shape ``[B, G, max_seq_len, D]``.
+        Invalid right padding reads page zero, then the attention mask excludes it.
+        Live block tables are validated by the CPU executor, outside layer loops.
         """
-        batch_size = block_tables.shape[0]
-        block_size = paged_kv_cache.block_size
-        device = block_tables.device
-        dtype = paged_kv_cache.k_blocks.dtype
-
-        k = torch.zeros(
-            (batch_size, self.num_kv_groups, max_seq_len, self.head_dim),
-            device=device,
-            dtype=dtype,
-        )
-        v = torch.zeros_like(k)
-
-        for batch_idx in range(batch_size):
-            seq_len = int(seq_lens[batch_idx].item())
-            if seq_len <= 0:
-                continue
-            needed_blocks = (seq_len + block_size - 1) // block_size
-            if needed_blocks > block_tables.shape[1]:
-                raise ValueError("paged KV block table does not cover the active sequence")
-            block_ids = block_tables[batch_idx, :needed_blocks]
-            if (block_ids < 0).any() or block_ids.numel() != needed_blocks:
-                raise ValueError("paged KV block table does not cover the active sequence")
-            k_chunks = paged_kv_cache.k_blocks[block_ids]
-            v_chunks = paged_kv_cache.v_blocks[block_ids]
-            k_seq = k_chunks.permute(1, 0, 2, 3).reshape(
-                self.num_kv_groups, needed_blocks * block_size, self.head_dim
-            )[:, :seq_len, :]
-            v_seq = v_chunks.permute(1, 0, 2, 3).reshape(
-                self.num_kv_groups, needed_blocks * block_size, self.head_dim
-            )[:, :seq_len, :]
-            k[batch_idx, :, :seq_len, :] = k_seq
-            v[batch_idx, :, :seq_len, :] = v_seq
-        return k, v
+        positions = torch.arange(max_seq_len, device=block_tables.device)
+        ids = block_tables[:, positions // paged_kv_cache.block_size].clamp_min(0)
+        offsets = positions % paged_kv_cache.block_size
+        keys = paged_kv_cache.k_blocks[ids, :, offsets, :].transpose(1, 2)
+        values = paged_kv_cache.v_blocks[ids, :, offsets, :].transpose(1, 2)
+        return keys, values
 
     def _build_attn_mask(
         self,
@@ -163,8 +123,12 @@ class GroupedQueryAttention(nn.Module):
     ) -> torch.Tensor:
         """Return additive mask ``[B, 1, q_len, max_seq_len]`` (0 keep, -inf block)."""
         batch_size = seq_lens.shape[0]
-        q_pos = kv_lens.unsqueeze(1) + torch.arange(q_len, device=device, dtype=torch.long).unsqueeze(0)
-        k_pos = torch.arange(max_seq_len, device=device, dtype=torch.long).view(1, 1, max_seq_len)
+        q_pos = kv_lens.unsqueeze(1) + torch.arange(
+            q_len, device=device, dtype=torch.long
+        ).unsqueeze(0)
+        k_pos = torch.arange(max_seq_len, device=device, dtype=torch.long).view(
+            1, 1, max_seq_len
+        )
         q_pos = q_pos.unsqueeze(-1)  # [B, q_len, 1]
 
         blocked = k_pos > q_pos
@@ -177,32 +141,19 @@ class GroupedQueryAttention(nn.Module):
         mask = mask.masked_fill(blocked, float("-inf"))
         return mask.unsqueeze(1)  # [B, 1, q_len, S]
 
-    def _apply_rope(self, q: torch.Tensor, k: torch.Tensor, kv_lens: torch.Tensor, dtype: torch.dtype) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _apply_rope(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        kv_lens: torch.Tensor,
+        dtype: torch.dtype,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         if self.rope is None:
             return q, k
-        batch_size, _, q_len, _ = q.shape
-        device = q.device
-        if bool((kv_lens == kv_lens[0]).all().item()):
-            cos, sin = self.rope.get_cos_sin(
-                seq_len=q_len,
-                offset=int(kv_lens[0].item()),
-                device=device,
-                dtype=dtype,
-            )
-            return apply_rope_single(q, cos, sin), apply_rope_single(k, cos, sin)
-
-        q_rows = []
-        k_rows = []
-        for batch_idx in range(batch_size):
-            cos, sin = self.rope.get_cos_sin(
-                seq_len=q_len,
-                offset=int(kv_lens[batch_idx].item()),
-                device=device,
-                dtype=dtype,
-            )
-            q_rows.append(apply_rope_single(q[batch_idx : batch_idx + 1], cos, sin))
-            k_rows.append(apply_rope_single(k[batch_idx : batch_idx + 1], cos, sin))
-        return torch.cat(q_rows, dim=0), torch.cat(k_rows, dim=0)
+        positions = kv_lens[:, None] + torch.arange(q.shape[2], device=q.device)
+        cos = self.rope.cos_cached[positions].to(dtype=dtype).unsqueeze(1)
+        sin = self.rope.sin_cached[positions].to(dtype=dtype).unsqueeze(1)
+        return q * cos + rotate_half(q) * sin, k * cos + rotate_half(k) * sin
 
     def forward(
         self,
@@ -211,13 +162,26 @@ class GroupedQueryAttention(nn.Module):
         block_tables: torch.Tensor,
         kv_lens: torch.Tensor,
         paged_kv_cache: PagedKVCache,
+        max_seq_len: Optional[int] = None,
     ) -> torch.Tensor:
         batch_size, q_len, _ = x.shape
         device = x.device
 
-        q = self.q_proj(x).view(batch_size, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        k = self.k_proj(x).view(batch_size, q_len, self.num_kv_groups, self.head_dim).transpose(1, 2)
-        v = self.v_proj(x).view(batch_size, q_len, self.num_kv_groups, self.head_dim).transpose(1, 2)
+        q = (
+            self.q_proj(x)
+            .view(batch_size, q_len, self.num_heads, self.head_dim)
+            .transpose(1, 2)
+        )
+        k = (
+            self.k_proj(x)
+            .view(batch_size, q_len, self.num_kv_groups, self.head_dim)
+            .transpose(1, 2)
+        )
+        v = (
+            self.v_proj(x)
+            .view(batch_size, q_len, self.num_kv_groups, self.head_dim)
+            .transpose(1, 2)
+        )
 
         if self.q_norm is not None:
             q = self.q_norm(q)
@@ -234,23 +198,14 @@ class GroupedQueryAttention(nn.Module):
         )
 
         seq_lens = kv_lens + q_len
-        max_seq_len = int(seq_lens.max().item())
+        if max_seq_len is None:
+            max_seq_len = int(seq_lens.max().item())
         k_cache, v_cache = self._gather_batch_kv(
             block_tables=block_tables,
             seq_lens=seq_lens,
             max_seq_len=max_seq_len,
             paged_kv_cache=paged_kv_cache,
         )
-
-        # [B, H, T, D] via GQA expand without Python batch loops.
-        q_b = q.reshape(batch_size, self.num_kv_groups, self.group_size, q_len, self.head_dim)
-        q_b = q_b.permute(0, 2, 1, 3, 4).reshape(
-            batch_size * self.group_size, self.num_kv_groups, q_len, self.head_dim
-        )
-        k_b = k_cache.unsqueeze(1).expand(batch_size, self.group_size, self.num_kv_groups, max_seq_len, self.head_dim)
-        k_b = k_b.reshape(batch_size * self.group_size, self.num_kv_groups, max_seq_len, self.head_dim)
-        v_b = v_cache.unsqueeze(1).expand(batch_size, self.group_size, self.num_kv_groups, max_seq_len, self.head_dim)
-        v_b = v_b.reshape(batch_size * self.group_size, self.num_kv_groups, max_seq_len, self.head_dim)
 
         attn_mask = self._build_attn_mask(
             q_len=q_len,
@@ -260,19 +215,16 @@ class GroupedQueryAttention(nn.Module):
             dtype=q.dtype,
             device=device,
         )
-        # Expand mask across GQA groups: [B, 1, T, S] -> [B*g, 1, T, S]
-        attn_mask = attn_mask.unsqueeze(1).expand(batch_size, self.group_size, 1, q_len, max_seq_len)
-        attn_mask = attn_mask.reshape(batch_size * self.group_size, 1, q_len, max_seq_len)
-
         out = F.scaled_dot_product_attention(
-            q_b,
-            k_b,
-            v_b,
+            q,
+            k_cache,
+            v_cache,
             attn_mask=attn_mask,
             dropout_p=0.0,
             scale=self.scale,
+            enable_gqa=True,
         )
-        out = out.reshape(batch_size, self.group_size, self.num_kv_groups, q_len, self.head_dim)
-        out = out.permute(0, 2, 1, 3, 4).reshape(batch_size, self.num_heads, q_len, self.head_dim)
-        out = out.transpose(1, 2).reshape(batch_size, q_len, self.num_heads * self.head_dim)
+        out = out.transpose(1, 2).reshape(
+            batch_size, q_len, self.num_heads * self.head_dim
+        )
         return self.out_proj(out)

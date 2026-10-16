@@ -1,6 +1,6 @@
 from typing import List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 SUPPORTED_MODEL = "gemma-3-270m-it"
@@ -16,7 +16,7 @@ class ChatMessage(BaseModel):
 
 class ChatCompletionRequest(BaseModel):
     model: str = Field(default=SUPPORTED_MODEL)
-    messages: List[ChatMessage] = Field(min_items=1, max_items=MAX_MESSAGES)
+    messages: List[ChatMessage] = Field(min_length=1, max_length=MAX_MESSAGES)
     max_tokens: Optional[int] = Field(default=None, ge=1, le=4096)
     temperature: Optional[float] = Field(default=0.8, ge=0.0, le=2.0)
     top_p: Optional[float] = Field(default=0.9, gt=0.0, le=1.0)
@@ -27,13 +27,13 @@ class ChatCompletionRequest(BaseModel):
     stream_options: Optional["StreamOptions"] = None
     stream: bool = False
 
-    @validator("model")
+    @field_validator("model")
     def validate_model(cls, value: str) -> str:
         if value != SUPPORTED_MODEL:
             raise ValueError(f"Only '{SUPPORTED_MODEL}' is supported")
         return value
 
-    @validator("stop")
+    @field_validator("stop")
     def validate_stop(cls, value):
         if value is None:
             return value
@@ -46,11 +46,13 @@ class ChatCompletionRequest(BaseModel):
             raise ValueError("stop sequences must be non-empty")
         return values
 
-    @validator("messages")
+    @field_validator("messages")
     def validate_total_content_length(cls, messages):
         total_chars = sum(len(message.content) for message in messages)
         if total_chars > MAX_TOTAL_CONTENT_CHARS:
-            raise ValueError(f"messages contain more than {MAX_TOTAL_CONTENT_CHARS} characters")
+            raise ValueError(
+                f"messages contain more than {MAX_TOTAL_CONTENT_CHARS} characters"
+            )
         return messages
 
 
@@ -58,4 +60,4 @@ class StreamOptions(BaseModel):
     include_usage: bool = False
 
 
-ChatCompletionRequest.update_forward_refs()
+ChatCompletionRequest.model_rebuild()

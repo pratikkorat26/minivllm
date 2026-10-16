@@ -2,6 +2,7 @@ import json
 import logging
 import time
 import uuid
+from contextlib import aclosing
 from typing import AsyncIterator, List, Optional, Tuple
 
 from config.settings import RuntimeSettings
@@ -11,7 +12,12 @@ from runtime import GemmaRuntime, resolve_device
 from .errors import AppError
 from .metrics import ServiceMetrics
 from .prompting import messages_to_gemma_prompt
-from .types import ChatCompletionEvent, ChatCompletionRequest, ChatCompletionResult, Usage
+from .types import (
+    ChatCompletionEvent,
+    ChatCompletionRequest,
+    ChatCompletionResult,
+    Usage,
+)
 
 LOGGER = logging.getLogger("app")
 SUPPORTED_MODEL = "gemma-3-270m-it"
@@ -76,23 +82,36 @@ class ChatCompletionService:
                 max_new_tokens=self.default_max_tokens,
                 sampling=self.default_sampling,
                 decode_batch_size=int(_config_value(config, "decode_batch_size", 4)),
-                decode_selection_window=int(_config_value(config, "decode_selection_window", 8)),
+                decode_selection_window=int(
+                    _config_value(config, "decode_selection_window", 8)
+                ),
                 max_queue_size=int(_config_value(config, "max_queue_size", 128)),
-                max_concurrent_requests=int(_config_value(config, "max_concurrent_requests", 16)),
+                max_concurrent_requests=int(
+                    _config_value(config, "max_concurrent_requests", 16)
+                ),
                 max_batch_tokens=int(_config_value(config, "max_batch_tokens", 256)),
                 request_timeout_s=_config_value(config, "request_timeout_s", None),
-                max_kv_cache_tokens=int(_config_value(config, "max_kv_cache_tokens", 32_768)),
+                max_kv_cache_tokens=int(
+                    _config_value(config, "max_kv_cache_tokens", 32_768)
+                ),
                 kv_block_size=int(_config_value(config, "kv_block_size", 16)),
                 num_kv_blocks=_config_value(config, "num_kv_blocks", None),
                 prefill_chunk_size=_config_value(config, "prefill_chunk_size", None),
-                enable_prefix_cache=bool(_config_value(config, "enable_prefix_cache", False)),
-                max_prefix_cache_entries=int(_config_value(config, "max_prefix_cache_entries", 64)),
+                enable_prefix_cache=bool(
+                    _config_value(config, "enable_prefix_cache", False)
+                ),
+                max_prefix_cache_entries=int(
+                    _config_value(config, "max_prefix_cache_entries", 64)
+                ),
             ),
         )
         self.metrics = ServiceMetrics(model=self.model_name)
 
     def _validate_request(self, request: ChatCompletionRequest) -> None:
-        if request.max_tokens is not None and request.max_tokens > self.max_request_tokens:
+        if (
+            request.max_tokens is not None
+            and request.max_tokens > self.max_request_tokens
+        ):
             raise AppError(
                 f"max_tokens must be <= {self.max_request_tokens}",
                 error_type="invalid_request_error",
@@ -102,11 +121,15 @@ class ChatCompletionService:
     def _raise_for_result_error(self, result) -> None:
         if result.error_message is None:
             return
-        if result.stop_reason == "capacity_exceeded":
+        if result.stop_reason in ("capacity_exceeded", "queue_full"):
             raise AppError(
-                "KV cache capacity exceeded",
+                result.error_message,
                 error_type="rate_limit_error",
-                code="capacity_exceeded",
+                code=result.stop_reason,
+            )
+        if result.stop_reason == "timeout":
+            raise AppError(
+                "request timed out", error_type="server_error", code="timeout"
             )
         if result.stop_reason == "context_limit":
             raise AppError(
@@ -114,7 +137,9 @@ class ChatCompletionService:
                 error_type="invalid_request_error",
                 code="context_length_exceeded",
             )
-        raise AppError("model execution failed", error_type="server_error", code="runtime_error")
+        raise AppError(
+            "model execution failed", error_type="server_error", code="runtime_error"
+        )
 
     def list_models(self) -> dict:
         return {
@@ -136,6 +161,10 @@ class ChatCompletionService:
             snapshot["scheduler"] = {
                 "queue_size": engine_stats.queued_requests,
                 "active_requests": engine_stats.active_requests,
+                "scheduled_tokens": engine_stats.scheduled_tokens,
+                "live_kv_tokens": engine_stats.live_kv_tokens,
+                "kv_blocks_total": engine_stats.kv_blocks_total,
+                "kv_blocks_used": engine_stats.kv_blocks_used,
                 "prefill_batch_size": engine_stats.prefill_batch_size,
                 "decode_batch_size": engine_stats.decode_batch_size,
                 "queue_wait_ms": engine_stats.queue_wait_ms,
@@ -167,6 +196,8 @@ class ChatCompletionService:
             engine_stats = self.engine.stats()
             lines.extend(
                 [
+                    f'gemma_kv_blocks_total{{model="{model}"}} {engine_stats.kv_blocks_total}',
+                    f'gemma_kv_blocks_used{{model="{model}"}} {engine_stats.kv_blocks_used}',
                     f'gemma_scheduler_queue_size{{model="{model}"}} {engine_stats.queued_requests}',
                     f'gemma_scheduler_active_requests{{model="{model}"}} {engine_stats.active_requests}',
                     f'gemma_scheduler_prefill_batch_size{{model="{model}"}} {engine_stats.prefill_batch_size}',
@@ -189,7 +220,9 @@ class ChatCompletionService:
     async def shutdown(self) -> None:
         await self.engine.shutdown()
 
-    def _log_completion(self, *, usage: Usage, finish_reason: str, result, stream: bool) -> None:
+    def _log_completion(
+        self, *, usage: Usage, finish_reason: str, result, stream: bool
+    ) -> None:
         LOGGER.info(
             json.dumps(
                 {
@@ -231,10 +264,14 @@ class ChatCompletionService:
         self._raise_for_result_error(result)
 
         text, stopped_by_sequence = _trim_stop(result.text, request.stop)
-        finish_reason = "stop" if stopped_by_sequence else _finish_reason(result.stop_reason)
+        finish_reason = (
+            "stop" if stopped_by_sequence else _finish_reason(result.stop_reason)
+        )
         usage = self._usage(prompt, completion_tokens=len(result.token_ids))
         self.metrics.record_generation(usage=usage, result=result, stream=False)
-        self._log_completion(usage=usage, finish_reason=finish_reason, result=result, stream=False)
+        self._log_completion(
+            usage=usage, finish_reason=finish_reason, result=result, stream=False
+        )
         return ChatCompletionResult(
             request_id=str(result.request_id),
             model=self.model_name,
@@ -244,7 +281,9 @@ class ChatCompletionService:
             created=_now_unix(),
         )
 
-    async def stream(self, request: ChatCompletionRequest) -> AsyncIterator[ChatCompletionEvent]:
+    async def stream(
+        self, request: ChatCompletionRequest
+    ) -> AsyncIterator[ChatCompletionEvent]:
         self._validate_request(request)
         completion_id = _completion_id()
         created = _now_unix()
@@ -253,6 +292,7 @@ class ChatCompletionService:
 
         completion_tokens = 0
         accumulated_text = ""
+        emitted_chars = 0
         final_stop_reason = "eos"
         failed = False
         yield ChatCompletionEvent(
@@ -262,54 +302,74 @@ class ChatCompletionService:
             role="assistant",
         )
         try:
-            async for event in self.engine.stream(
-                GenerateRequest(
-                    request_id=completion_id,
-                    prompt=prompt,
-                    sampling=request.sampling,
-                    max_new_tokens=request.max_tokens,
+            async with aclosing(
+                self.engine.stream(
+                    GenerateRequest(
+                        request_id=completion_id,
+                        prompt=prompt,
+                        sampling=request.sampling,
+                        max_new_tokens=request.max_tokens,
+                    )
                 )
-            ):
-                if event.kind == "text":
-                    if not event.text:
-                        continue
-                    completion_tokens = event.generated_token_count or (completion_tokens + 1)
-                    accumulated_text += event.text
-                    text = event.text
-                    stopped_by_sequence = False
-                    if request.stop:
-                        stop_index = _first_stop_index(accumulated_text, request.stop)
-                        if stop_index is not None:
-                            emitted_before_chunk = len(accumulated_text) - len(event.text)
-                            text = accumulated_text[emitted_before_chunk:stop_index]
-                            stopped_by_sequence = True
+            ) as events:
+                async for event in events:
+                    if event.kind == "text":
+                        if not event.text:
+                            continue
+                        completion_tokens = event.generated_token_count or (
+                            completion_tokens + 1
+                        )
+                        accumulated_text += event.text
+                        stop_index = _first_stop_index(
+                            accumulated_text, request.stop or []
+                        )
+                        stopped_by_sequence = stop_index is not None
+                        safe_end = (
+                            len(accumulated_text) if stop_index is None else stop_index
+                        )
+                        if not stopped_by_sequence:
+                            # Hold a suffix that could become a split stop string.
+                            hold = max(
+                                (
+                                    length
+                                    for stop in request.stop or []
+                                    for length in range(1, len(stop))
+                                    if accumulated_text.endswith(stop[:length])
+                                ),
+                                default=0,
+                            )
+                            safe_end -= hold
+                        text = accumulated_text[emitted_chars:safe_end]
+                        emitted_chars = safe_end
+                        if stopped_by_sequence:
                             final_stop_reason = "stop"
-                    if text:
+                        if text:
+                            yield ChatCompletionEvent(
+                                request_id=completion_id,
+                                model=self.model_name,
+                                created=created,
+                                content=text,
+                            )
+                        if stopped_by_sequence:
+                            await self.engine.abort(completion_id)
+                            break
+                        continue
+
+                    completion_tokens = event.generated_token_count
+                    final_stop_reason = event.stop_reason or "eos"
+                    if event.error_message is not None:
+                        failed = True
                         yield ChatCompletionEvent(
                             request_id=completion_id,
                             model=self.model_name,
                             created=created,
-                            content=text,
+                            error={
+                                "message": "model execution failed",
+                                "type": "server_error",
+                                "code": event.stop_reason or "runtime_error",
+                            },
                         )
-                    if stopped_by_sequence:
-                        await self.engine.abort(completion_id)
                         break
-                    continue
-
-                final_stop_reason = event.stop_reason or "eos"
-                if event.error_message is not None:
-                    failed = True
-                    yield ChatCompletionEvent(
-                        request_id=completion_id,
-                        model=self.model_name,
-                        created=created,
-                        error={
-                            "message": "model execution failed",
-                            "type": "server_error",
-                            "code": event.stop_reason or "runtime_error",
-                        },
-                    )
-                    break
         except Exception:
             failed = True
             LOGGER.exception("streaming chat completion failed")
@@ -322,6 +382,18 @@ class ChatCompletionService:
                     "type": "server_error",
                     "code": "runtime_error",
                 },
+            )
+
+        if (
+            not failed
+            and final_stop_reason != "stop"
+            and emitted_chars < len(accumulated_text)
+        ):
+            yield ChatCompletionEvent(
+                request_id=completion_id,
+                model=self.model_name,
+                created=created,
+                content=accumulated_text[emitted_chars:],
             )
 
         usage = self._usage(prompt, completion_tokens=completion_tokens)

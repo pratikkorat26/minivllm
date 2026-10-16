@@ -1,0 +1,57 @@
+{
+  "kind": "synthetic_attention",
+  "torch": "2.7.1+cu128",
+  "python": "3.12.10",
+  "device": "NVIDIA GeForce RTX 4070 Laptop GPU",
+  "iterations": 50,
+  "rows": [
+    {
+      "batch": 1,
+      "context": 128,
+      "query": 1,
+      "latency_ms": 0.7865280006080866
+    },
+    {
+      "batch": 1,
+      "context": 128,
+      "query": 32,
+      "latency_ms": 0.9076900035142899
+    },
+    {
+      "batch": 1,
+      "context": 512,
+      "query": 1,
+      "latency_ms": 0.8745739981532097
+    },
+    {
+      "batch": 1,
+      "context": 512,
+      "query": 32,
+      "latency_ms": 0.915458002127707
+    },
+    {
+      "batch": 4,
+      "context": 128,
+      "query": 1,
+      "latency_ms": 1.4732579980045557
+    },
+    {
+      "batch": 4,
+      "context": 128,
+      "query": 32,
+      "latency_ms": 1.363484002649784
+    },
+    {
+      "batch": 4,
+      "context": 512,
+      "query": 1,
+      "latency_ms": 1.3747519999742508
+    },
+    {
+      "batch": 4,
+      "context": 512,
+      "query": 32,
+      "latency_ms": 1.4002780010923743
+    }
+  ]
+}

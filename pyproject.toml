@@ -7,21 +7,22 @@ name = "gemma3-from-scratch-python"
 version = "0.1.0"
 description = "Readable Gemma 3 270M inference implementation with a local OpenAI-like API."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "fastapi",
     "huggingface_hub",
-    "pydantic",
+    "pydantic>=2",
     "safetensors",
     "starlette",
     "tokenizers",
-    "torch",
+    "torch>=2.5",
     "uvicorn",
 ]
 
 [project.optional-dependencies]
-benchmark = ["pandas"]
-dev = ["pytest"]
+benchmark = ["matplotlib"]
+reference = ["transformers>=4.52"]
+dev = ["pytest", "ruff"]
 
 [project.scripts]
 gemma3-generate = "main:main"
@@ -43,3 +44,6 @@ include = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*.py" = ["E402"]

@@ -37,6 +37,8 @@ class GenerateRequest:
 
 @dataclass(frozen=True)
 class EngineStats:
+    scheduled_tokens: int = 0
+    live_kv_tokens: int = 0
     active_requests: int = 0
     queued_requests: int = 0
     kv_blocks_total: int = 0
@@ -76,6 +78,9 @@ class RequestState:
     created_at_s: float = 0.0
     deadline_s: Optional[float] = None
     first_scheduled_at_s: Optional[float] = None
+    first_token_at_s: Optional[float] = None
+    last_token_at_s: Optional[float] = None
+    emitted_text: str = ""
     finished_at_s: Optional[float] = None
     prefill_time_s: float = 0.0
     prefill_steps: int = 0
@@ -116,6 +121,8 @@ class GenerateResult:
     model_tokens_per_s: float = 0.0
     prefill_steps: int = 0
     decode_steps: int = 0
+    ttft_s: Optional[float] = None
+    tpot_s: Optional[float] = None
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,482 @@
+{
+  "kind": "real_model_closed_loop",
+  "model": "google/gemma-3-270m",
+  "torch": "2.7.1+cu128",
+  "python": "3.12.10",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "dtype": "torch.bfloat16",
+  "engine_config": {
+    "choose_model": "270m",
+    "use_instruct_model": false,
+    "max_new_tokens": 16,
+    "sampling": {
+      "temperature": 0,
+      "top_p": 1,
+      "top_k": 0,
+      "repetition_penalty": 1,
+      "seed": null
+    },
+    "decode_batch_size": 4,
+    "decode_selection_window": 8,
+    "max_queue_size": 128,
+    "max_concurrent_requests": 16,
+    "max_batch_tokens": 256,
+    "request_timeout_s": null,
+    "max_kv_cache_tokens": 8192,
+    "kv_block_size": 16,
+    "num_kv_blocks": null,
+    "prefill_chunk_size": null,
+    "enable_prefix_cache": false,
+    "max_prefix_cache_entries": 64
+  },
+  "prompts": [
+    "The purpose of a KV cache is",
+    "Continuous batching improves GPU utilization because",
+    "Explain how inference memory allocation works.",
+    "A useful engineering tradeoff in serving is"
+  ],
+  "warmup_requests": 1,
+  "device": "NVIDIA GeForce RTX 4070 Laptop GPU",
+  "max_new_tokens": 16,
+  "repeats": 3,
+  "rows": [
+    {
+      "concurrency": 1,
+      "elapsed_s": 1.8452604999765754,
+      "output_tokens_per_s": 26.0125873829789,
+      "peak_allocated_bytes": 763890176,
+      "requests": [
+        {
+          "request": 0,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 37.50300011597574,
+          "tpot_ms": 33.61137999842564,
+          "latency_ms": 541.7086000088602,
+          "token_hash": "0c50be525c3e006ba51740e79f8d2a41dd51ddc0880117ff460612c4f72bf202"
+        },
+        {
+          "request": 0,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 34.335399977862835,
+          "tpot_ms": 39.75202666285137,
+          "latency_ms": 630.6474998127669,
+          "token_hash": "0c50be525c3e006ba51740e79f8d2a41dd51ddc0880117ff460612c4f72bf202"
+        },
+        {
+          "request": 0,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 35.13310011476278,
+          "tpot_ms": 42.49789332970977,
+          "latency_ms": 672.6268001366407,
+          "token_hash": "0c50be525c3e006ba51740e79f8d2a41dd51ddc0880117ff460612c4f72bf202"
+        }
+      ]
+    },
+    {
+      "concurrency": 2,
+      "elapsed_s": 2.0197471999563277,
+      "output_tokens_per_s": 47.53070087289923,
+      "peak_allocated_bytes": 764939776,
+      "requests": [
+        {
+          "request": 0,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 59.269199846312404,
+          "tpot_ms": 41.455126677950226,
+          "latency_ms": 681.114099919796,
+          "token_hash": "c914f63292bb1dee694836a25c61aade7ea9938b455f14c175961d91c1ffca1f"
+        },
+        {
+          "request": 1,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 97.03970002010465,
+          "tpot_ms": 38.93354667040209,
+          "latency_ms": 681.057000067085,
+          "token_hash": "c8b27d9b442c2dbf68c2fd012a5b9660dbe438add54a852992d8468f2a357124"
+        },
+        {
+          "request": 0,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 37.410000106319785,
+          "tpot_ms": 43.517353323598705,
+          "latency_ms": 690.1873999740928,
+          "token_hash": "c914f63292bb1dee694836a25c61aade7ea9938b455f14c175961d91c1ffca1f"
+        },
+        {
+          "request": 1,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 76.15559990517795,
+          "tpot_ms": 40.93216001056135,
+          "latency_ms": 690.1509999297559,
+          "token_hash": "c8b27d9b442c2dbf68c2fd012a5b9660dbe438add54a852992d8468f2a357124"
+        },
+        {
+          "request": 0,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 40.95149994827807,
+          "tpot_ms": 40.48049999400973,
+          "latency_ms": 648.174999980256,
+          "token_hash": "c914f63292bb1dee694836a25c61aade7ea9938b455f14c175961d91c1ffca1f"
+        },
+        {
+          "request": 1,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 94.13450001738966,
+          "tpot_ms": 36.93395333054165,
+          "latency_ms": 648.1542999390513,
+          "token_hash": "c8b27d9b442c2dbf68c2fd012a5b9660dbe438add54a852992d8468f2a357124"
+        }
+      ]
+    },
+    {
+      "concurrency": 4,
+      "elapsed_s": 2.3731198001187295,
+      "output_tokens_per_s": 80.90615568181347,
+      "peak_allocated_bytes": 767038976,
+      "requests": [
+        {
+          "request": 0,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 38.067700108513236,
+          "tpot_ms": 50.105433321247496,
+          "latency_ms": 789.6654999349266,
+          "token_hash": "c914f63292bb1dee694836a25c61aade7ea9938b455f14c175961d91c1ffca1f"
+        },
+        {
+          "request": 1,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 75.19340002909303,
+          "tpot_ms": 47.62701333190004,
+          "latency_ms": 789.604099933058,
+          "token_hash": "e85076afc15548f1d08f2fc04ea44f5f06a4dd4afe6a653847740ae91a77ea93"
+        },
+        {
+          "request": 2,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 112.34269989654422,
+          "tpot_ms": 45.14891332946718,
+          "latency_ms": 789.5806999877095,
+          "token_hash": "7da9e3d0b1e4f7884df6a9e29e12cde371474b41b93096ec7d7efea1d427f018"
+        },
+        {
+          "request": 3,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 146.74610015936196,
+          "tpot_ms": 42.85132666118443,
+          "latency_ms": 789.525100030005,
+          "token_hash": "eac771c09400e29fc0b536c59c3ac15ac5a7cbe5c69b3dea82a3901f6628d4b8"
+        },
+        {
+          "request": 0,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 57.94860003516078,
+          "tpot_ms": 50.81974000980457,
+          "latency_ms": 820.2581000514328,
+          "token_hash": "c914f63292bb1dee694836a25c61aade7ea9938b455f14c175961d91c1ffca1f"
+        },
+        {
+          "request": 1,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 93.7739999499172,
+          "tpot_ms": 48.42965332791209,
+          "latency_ms": 820.2247999142855,
+          "token_hash": "e85076afc15548f1d08f2fc04ea44f5f06a4dd4afe6a653847740ae91a77ea93"
+        },
+        {
+          "request": 2,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 131.2541998922825,
+          "tpot_ms": 45.92999334757527,
+          "latency_ms": 820.2078999020159,
+          "token_hash": "7da9e3d0b1e4f7884df6a9e29e12cde371474b41b93096ec7d7efea1d427f018"
+        },
+        {
+          "request": 3,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 166.85110004618764,
+          "tpot_ms": 43.556079997991525,
+          "latency_ms": 820.1999999582767,
+          "token_hash": "eac771c09400e29fc0b536c59c3ac15ac5a7cbe5c69b3dea82a3901f6628d4b8"
+        },
+        {
+          "request": 0,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 40.765600046142936,
+          "tpot_ms": 48.14221998676658,
+          "latency_ms": 762.9143998492509,
+          "token_hash": "c914f63292bb1dee694836a25c61aade7ea9938b455f14c175961d91c1ffca1f"
+        },
+        {
+          "request": 1,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 102.0873999223113,
+          "tpot_ms": 44.05268666644891,
+          "latency_ms": 762.8838999662548,
+          "token_hash": "e85076afc15548f1d08f2fc04ea44f5f06a4dd4afe6a653847740ae91a77ea93"
+        },
+        {
+          "request": 2,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 144.6677001658827,
+          "tpot_ms": 41.21308666653931,
+          "latency_ms": 762.868600198999,
+          "token_hash": "7da9e3d0b1e4f7884df6a9e29e12cde371474b41b93096ec7d7efea1d427f018"
+        },
+        {
+          "request": 3,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 181.1136999167502,
+          "tpot_ms": 38.78261333641907,
+          "latency_ms": 762.8609999082983,
+          "token_hash": "eac771c09400e29fc0b536c59c3ac15ac5a7cbe5c69b3dea82a3901f6628d4b8"
+        }
+      ]
+    },
+    {
+      "concurrency": 8,
+      "elapsed_s": 4.197976199910045,
+      "output_tokens_per_s": 91.4726481794319,
+      "peak_allocated_bytes": 767041024,
+      "requests": [
+        {
+          "request": 0,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 39.32310012169182,
+          "tpot_ms": 91.50487999431789,
+          "latency_ms": 1411.90700000152,
+          "token_hash": "c914f63292bb1dee694836a25c61aade7ea9938b455f14c175961d91c1ffca1f"
+        },
+        {
+          "request": 1,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 77.69880001433194,
+          "tpot_ms": 88.94466667746504,
+          "latency_ms": 1411.8731999769807,
+          "token_hash": "e85076afc15548f1d08f2fc04ea44f5f06a4dd4afe6a653847740ae91a77ea93"
+        },
+        {
+          "request": 2,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 114.52839989215136,
+          "tpot_ms": 86.48835999580722,
+          "latency_ms": 1411.8570999708027,
+          "token_hash": "7da9e3d0b1e4f7884df6a9e29e12cde371474b41b93096ec7d7efea1d427f018"
+        },
+        {
+          "request": 3,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 150.64800018444657,
+          "tpot_ms": 84.079493333896,
+          "latency_ms": 1411.8427999783307,
+          "token_hash": "eac771c09400e29fc0b536c59c3ac15ac5a7cbe5c69b3dea82a3901f6628d4b8"
+        },
+        {
+          "request": 4,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 192.86219985224307,
+          "tpot_ms": 83.81847999989986,
+          "latency_ms": 1450.1539999619126,
+          "token_hash": "c914f63292bb1dee694836a25c61aade7ea9938b455f14c175961d91c1ffca1f"
+        },
+        {
+          "request": 5,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 230.66210001707077,
+          "tpot_ms": 81.29961999754111,
+          "latency_ms": 1450.1626000273973,
+          "token_hash": "e85076afc15548f1d08f2fc04ea44f5f06a4dd4afe6a653847740ae91a77ea93"
+        },
+        {
+          "request": 6,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 270.70940006524324,
+          "tpot_ms": 78.62945332502325,
+          "latency_ms": 1450.155399972573,
+          "token_hash": "7da9e3d0b1e4f7884df6a9e29e12cde371474b41b93096ec7d7efea1d427f018"
+        },
+        {
+          "request": 7,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 311.60089978948236,
+          "tpot_ms": 75.90274667988221,
+          "latency_ms": 1450.1506998203695,
+          "token_hash": "eac771c09400e29fc0b536c59c3ac15ac5a7cbe5c69b3dea82a3901f6628d4b8"
+        },
+        {
+          "request": 0,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 32.52859995700419,
+          "tpot_ms": 87.12148666381836,
+          "latency_ms": 1339.3665000330657,
+          "token_hash": "c914f63292bb1dee694836a25c61aade7ea9938b455f14c175961d91c1ffca1f"
+        },
+        {
+          "request": 1,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 66.85649999417365,
+          "tpot_ms": 84.83142666518688,
+          "latency_ms": 1339.3338001333177,
+          "token_hash": "e85076afc15548f1d08f2fc04ea44f5f06a4dd4afe6a653847740ae91a77ea93"
+        },
+        {
+          "request": 2,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 102.94770007021725,
+          "tpot_ms": 82.42445999446015,
+          "latency_ms": 1339.3188000191003,
+          "token_hash": "7da9e3d0b1e4f7884df6a9e29e12cde371474b41b93096ec7d7efea1d427f018"
+        },
+        {
+          "request": 3,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 139.6198000293225,
+          "tpot_ms": 79.97881333964567,
+          "latency_ms": 1339.3099000677466,
+          "token_hash": "eac771c09400e29fc0b536c59c3ac15ac5a7cbe5c69b3dea82a3901f6628d4b8"
+        },
+        {
+          "request": 4,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 182.4841999914497,
+          "tpot_ms": 79.65820667644341,
+          "latency_ms": 1377.369600115344,
+          "token_hash": "c914f63292bb1dee694836a25c61aade7ea9938b455f14c175961d91c1ffca1f"
+        },
+        {
+          "request": 5,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 219.63479998521507,
+          "tpot_ms": 77.18160000319283,
+          "latency_ms": 1377.3650000803173,
+          "token_hash": "e85076afc15548f1d08f2fc04ea44f5f06a4dd4afe6a653847740ae91a77ea93"
+        },
+        {
+          "request": 6,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 255.26500004343688,
+          "tpot_ms": 74.80490667124589,
+          "latency_ms": 1377.3431000299752,
+          "token_hash": "7da9e3d0b1e4f7884df6a9e29e12cde371474b41b93096ec7d7efea1d427f018"
+        },
+        {
+          "request": 7,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 293.3416001033038,
+          "tpot_ms": 72.2657866620769,
+          "latency_ms": 1377.3356000892818,
+          "token_hash": "eac771c09400e29fc0b536c59c3ac15ac5a7cbe5c69b3dea82a3901f6628d4b8"
+        },
+        {
+          "request": 0,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 36.641799844801426,
+          "tpot_ms": 86.55226000895102,
+          "latency_ms": 1334.9384998437017,
+          "token_hash": "c914f63292bb1dee694836a25c61aade7ea9938b455f14c175961d91c1ffca1f"
+        },
+        {
+          "request": 1,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 71.50970003567636,
+          "tpot_ms": 84.22614000737667,
+          "latency_ms": 1334.9074001889676,
+          "token_hash": "e85076afc15548f1d08f2fc04ea44f5f06a4dd4afe6a653847740ae91a77ea93"
+        },
+        {
+          "request": 2,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 107.30840009637177,
+          "tpot_ms": 81.83862666289012,
+          "latency_ms": 1334.8920000717044,
+          "token_hash": "7da9e3d0b1e4f7884df6a9e29e12cde371474b41b93096ec7d7efea1d427f018"
+        },
+        {
+          "request": 3,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 141.00860012695193,
+          "tpot_ms": 79.59125333776076,
+          "latency_ms": 1334.8846000153571,
+          "token_hash": "eac771c09400e29fc0b536c59c3ac15ac5a7cbe5c69b3dea82a3901f6628d4b8"
+        },
+        {
+          "request": 4,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 176.12940003164113,
+          "tpot_ms": 79.57358666074772,
+          "latency_ms": 1369.7460999246687,
+          "token_hash": "c914f63292bb1dee694836a25c61aade7ea9938b455f14c175961d91c1ffca1f"
+        },
+        {
+          "request": 5,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 212.02880004420877,
+          "tpot_ms": 77.18098666518927,
+          "latency_ms": 1369.749299949035,
+          "token_hash": "e85076afc15548f1d08f2fc04ea44f5f06a4dd4afe6a653847740ae91a77ea93"
+        },
+        {
+          "request": 6,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 247.0317000988871,
+          "tpot_ms": 74.84699999913573,
+          "latency_ms": 1369.740700116381,
+          "token_hash": "7da9e3d0b1e4f7884df6a9e29e12cde371474b41b93096ec7d7efea1d427f018"
+        },
+        {
+          "request": 7,
+          "tokens": 16,
+          "content_events": 16,
+          "ttft_ms": 281.2776998616755,
+          "tpot_ms": 72.56338667745392,
+          "latency_ms": 1369.735499843955,
+          "token_hash": "eac771c09400e29fc0b536c59c3ac15ac5a7cbe5c69b3dea82a3901f6628d4b8"
+        }
+      ]
+    }
+  ],
+  "checkpoint_sha256": "abb58eb73aece5163624090d5383c59cbcdb9e9539ec84cb864f74386c4b21d5"
+}

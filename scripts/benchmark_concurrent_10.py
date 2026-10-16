@@ -53,7 +53,12 @@ async def main() -> None:
         "Write one creative sentence that starts a sci-fi story on Mars.",
     ]
     start = time.perf_counter()
-    results = await asyncio.gather(*[engine.generate(GenerateRequest(str(index), prompt)) for index, prompt in enumerate(prompts)])
+    results = await asyncio.gather(
+        *[
+            engine.generate(GenerateRequest(str(index), prompt))
+            for index, prompt in enumerate(prompts)
+        ]
+    )
     elapsed_s = time.perf_counter() - start
 
     ok = 0

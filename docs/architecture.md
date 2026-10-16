@@ -1,141 +1,132 @@
 # Architecture
 
-This document describes the **canonical serving stack** on `main` after the rock-solid architecture consolidation.
+The public `LLMEngine` and `InferenceEngine` interfaces remain `generate`,
+`stream`, `abort`, `stats`, and `shutdown`.
 
-## Layering
+| Package | Responsibility | Boundary |
+|---|---|---|
+| `adapters/openai` | FastAPI, HTTP errors, SSE | No torch or model loading |
+| `app` | Prompting, stop strings, usage, metrics | No HTTP dependency |
+| `inference` | Scheduler, executor, allocation, sampling | No HTTP/runtime-loader dependency |
+| `runtime` | Loading, tokenizer, device policy | No serving dependency |
+| `gemma3` | Tensor operations and physical KV storage | No serving/runtime dependency |
+| `config` | Existing CLI/env settings | Converted to engine config |
 
-```mermaid
-flowchart TB
-  client[Client]
-  adapter[adapters_openai]
-  app[app_ChatCompletionService]
-  engine[inference_LLMEngine]
-  sched[AsyncScheduler]
-  exec[PagedModelExecutor]
-  kv[KVBlockManager_PrefixCache]
-  runtime[runtime_GemmaRuntime]
-  model[gemma3_Model]
+Tests enforce import boundaries. The admission module remains a compatibility
+export; the scheduler directly checks the concurrency cap.
 
-  client --> adapter --> app --> engine
-  engine --> sched
-  engine --> exec
-  sched --> exec
-  exec --> kv
-  exec --> runtime
-  runtime --> model
-```
-
-| Layer | Package | Responsibility | Must not |
-|-------|---------|----------------|----------|
-| HTTP | `adapters/openai` | FastAPI, OpenAI schemas, SSE, HTTP errors | Import `torch` or load models |
-| App | `app` | Prompting, validation, metrics, map to engine API | Depend on FastAPI / OpenAI schemas |
-| Inference | `inference` | Scheduling, execution, KV, sampling, contracts | Import FastAPI, app, or runtime loaders |
-| Runtime | `runtime` | Device/dtype, download weights, tokenizer | Import HTTP / app |
-| Model | `gemma3` | Tensors, attention, paged KV storage, RoPE, MLP | Import serving / runtime |
-
-Import boundaries are enforced by `tests/architecture/test_import_boundaries.py`.
-
-## Inference core
+## Scheduling
 
 ```mermaid
-flowchart LR
-  submit[submit_GenerateRequest]
-  waiting[waiting_queue]
-  admit[FifoAdmission]
-  prefill[prefill_chunked_bs1]
-  decode[decode_cohort_batch]
-  done[GenerateResult_or_StreamEvent]
-
-  submit --> waiting --> admit
-  admit --> prefill
-  prefill -->|prompt_done| decode
-  decode --> done
-  admit -.->|prefix_hit| prefill
+flowchart TD
+    Submit[Submit and tokenize] --> Bound{Outstanding limit?}
+    Bound -->|full| Reject[Queue-full result]
+    Bound -->|room| Wait[FIFO waiting queue]
+    Wait --> Admit{Concurrency + KV reservation fit?}
+    Admit -->|later| Wait
+    Admit -->|impossible with no active work| Fail[Capacity result]
+    Admit -->|yes| Prefill[Chunked prefill queue]
+    Prefill -->|prompt finished| Decode[Ragged decode queue]
+    Prefill -->|more prompt| Prefill
+    Decode -->|sampled token| Decode
+    Decode -->|EOS / limit| Done[Resolve + release references]
+    Prefill -->|error / timeout / abort| Done
+    Decode -->|error / timeout / abort| Done
 ```
 
-### Components
+Each tick expires/cancels all known requests and admits FIFO while capacity permits.
+Decode selects the oldest request's sampling cohort, capped by batch size and
+`max_batch_tokens`. Sequence lengths may differ; every decode input is one token.
+Remaining budget serves one chunk from each queued prefill, in round-robin order.
+When decode exhausts the budget while prefill waits, the next tick reserves a
+prefill turn. Forwards are separate: no mixed or batched ragged prefill kernel.
 
-- **`LLMEngine`** ([`inference/engine.py`](../inference/engine.py)) — thin façade: `generate` / `stream` / `abort` / `stats` / `shutdown`
-- **`AsyncScheduler`** ([`inference/scheduler/scheduler.py`](../inference/scheduler/scheduler.py)) — queues, admission, timeouts, cancel, stream events; prefers prefill over decode each step
-- **`FifoAdmissionPolicy`** ([`inference/scheduler/admission.py`](../inference/scheduler/admission.py)) — cap `max_concurrent_requests`
-- **`DecodeBatchSelector`** ([`inference/scheduler/batch.py`](../inference/scheduler/batch.py)) — cohort by `(seq_len, sampling)` within a selection window
-- **`PagedModelExecutor`** ([`inference/executor.py`](../inference/executor.py)) — tokenize, grow blocks, forward, sample (sync; no asyncio)
-- **`KVBlockManager` + `PrefixCache`** ([`inference/kv/`](../inference/kv/)) — free-list blocks, refcounts, optional LRU prefix reuse
+Admission reserves
+`ceil(min(context_limit, prompt_tokens + max_new_tokens - 1) / block_size)` pages,
+accounting for prefix reuse. The final sampled token does not enter KV. Reservation
+is physical and guarantees progress, at the cost of unused pages and FIFO
+head-of-line blocking. No recomputation/preemption subsystem is required.
 
-Model steps are **serialized** on the ASGI event loop (one executor owner).
+## KV ownership and layouts
 
-### Prefill vs decode
+```text
+K and V per layer: [physical blocks, KV heads, block size, head dimension]
+logical position p -> block_table[p // block_size], offset p % block_size
+batch block tables: [B, max_reserved_blocks], padded with -1
+KV lengths: [B], positions written before the current forward
+```
 
-| Phase | Batching | Notes |
-|-------|----------|-------|
-| Prefill | Always **batch size 1** | Optional `prefill_chunk_size`; non-final chunks skip LM head |
-| Decode | Up to `decode_batch_size` | Same absolute sequence length + sampling hyperparameters |
+Append indexes `[physical_block, :, offset, :]` directly. A head-major view of
+block-major storage is invalid with multiple KV heads; regression tests cover it.
+The CPU allocator has a free-list and physical page refcounts. Each request owns
+one reference per attached page; each inserted cache entry owns another. Duplicate
+inserts create no ownership. Eviction releases cache references; active requests
+keep their references. A page returns to the free-list only at refcount zero.
 
-### Logits
+Cache entries hold token tuples and whole-page block lists. Lookup chooses the
+longest cached entry that is a prefix of the incoming prompt. LRU eviction occurs
+on entry-count pressure and physical-page pressure. This bounded linear scan does
+not implement arbitrary radix-prefix splitting.
 
-`Gemma3Model.forward(..., compute_logits=, logits_last_only=)`:
+Exact hits must recompute logits for at least the last token. Reuse is capped at
+`floor(min(cached_tokens, prompt_tokens - 1) / block_size) * block_size`.
+The final page is private. Up to one page is recomputed to avoid mutating shared
+pages or adding copy-on-write machinery.
 
-- Default: `out_head` on **last position only** → `[B, 1, V]`
-- Intermediate chunked prefill: `compute_logits=False` (KV still updated)
+## Execution
 
-### Attention / KV
+The scheduler sends synchronous steps to one `ThreadPoolExecutor` worker, awaiting
+each before any further allocator/model mutation. HTTP and request submission can
+run during execution. Tokenization/admission still run on the event loop. Handoff
+adds overhead; its purpose is responsiveness, not single-request speed.
 
-- Paged append via `scatter_` into shared `PagedKVCache` per layer
-- Batched SDPA with additive mask (causal / sliding + padding)
-- Sliding-window mask uses `masked_fill_` (not `bool * -inf`, which produces NaNs)
+The executor transfers a batch block-table tensor and a length vector, passing a
+CPU-known maximum sequence length through all layers. There are no per-layer
+sequence-scalar reads in the engine path. RoPE indexes positions for all rows at
+once. KV gather produces `[B, G, S, D]` with batch indexing; right-padding reads
+page zero and is excluded by the mask. The allocator guarantees live page indices.
 
-## Runtime policy
+SDPA receives Q `[B,H,Q,D]`, K/V `[B,G,S,D]`, `enable_gqa=True`, and additive mask
+`[B,1,Q,S]` combining causal, sliding and per-row lengths. PyTorch chooses the
+backend; no particular fused kernel is forced. Dense gather is still an O(context)
+allocation/copy. Inference mode is used, final-position logits are `[B,1,V]`, and
+sampled decode IDs transfer to CPU once per batch. Intermediate prefill chunks
+skip vocabulary projection.
 
-[`runtime/provider.py`](../runtime/provider.py):
+CUDA BF16 and CPU FP32 are supported without Hopper-specific instructions. Explicit
+CUDA graph capture/replay is not implemented: dynamic allocations/shapes need
+stable buffers and replay ownership first. Opt-in `torch.compile` is experimental,
+not a graph replay feature claim.
 
-| Device | Dtype | `torch.compile` |
-|--------|-------|-----------------|
-| CUDA | `bfloat16` | Yes (`reduce-overhead`), unless `GEMMA_DISABLE_COMPILE=1` |
-| CPU (default non-CUDA) | `float32` | No |
-| MPS (opt-in `--device mps`) | `float32` | No |
+## Lifecycle and serving
 
-Auto device order: **CUDA → CPU**. MPS is not auto-selected (paged gather/scatter is slower there for this model today).
+Internal futures are shielded from caller cancellation. Abort/timeout runs between
+steps; launched kernels finish. Initialization/execution errors resolve requests
+and release pages. All known requests, including buried waiting requests, are
+checked for expiry each tick.
 
-Optional: `GEMMA_NUM_THREADS` → `torch.set_num_threads`.
+Streams buffer 64 events, reserving a terminal slot. Slow consumers fail and release
+pages instead of stalling other requests. Explicit iterator closing propagates
+through adapter/app/engine. Non-streaming HTTP polls for disconnect while awaiting
+completion. Shutdown stops admission, marks requests cancelled, joins the scheduler
+and worker, then clears cache references.
 
-## App + adapter
+Accumulated token IDs are detokenized to handle Unicode tails. Stop-string prefix
+suffixes are held until safe to emit. EOS is omitted from text but included in usage.
 
-- **`ChatCompletionService`** builds `GemmaRuntime` + `LLMEngine`, formats chat turns (`use_instruct_model=False` on the engine so prompts are not double-templated)
-- **`adapters/openai/routes.py`**: `/healthz`, `/readyz`, `/v1/models`, `/stats`, `/metrics`, `/v1/chat/completions`
-- Entry: `python -m adapters.openai.run` / console script `gemma3-serve`
+## Metrics and limits
 
-CLI entry: `main.py` / `gemma3-generate` (sets `use_instruct_model=True` and applies the chat template in the executor).
+`EngineStats` includes queued/active counts, scheduled token count, live KV positions,
+physical page capacity/use, phase batch sizes and cache counters. Reserved pages
+include future growth and cached pages; live positions are different. These are
+snapshots, not atomic GPU utilization measurements.
 
-## Feature maturity
+`ttft_s` measures submit-to-first-sampled-token time. `tpot_s` measures elapsed
+first-to-last token time divided by subsequent token count, including scheduler
+waits. Legacy prefill/decode host timing spans are not exact CUDA kernel timings.
+Use client-observed throughput/latency and synchronized microbenchmarks for claims.
 
-| Feature | Status |
-|---------|--------|
-| Paged KV | Canonical path |
-| Continuous batching | Decode-centric; prefill not batched |
-| Chunked prefill | Supported via `prefill_chunk_size` |
-| Prefix cache | Opt-in; `scope` hard-coded `"default"` |
-| OpenAI chat API | Streaming + non-streaming |
-| Multi-GPU / speculative decode / Flash paged attn | Not implemented |
-
-## Removed packages (do not resurrect)
-
-| Removed | Replaced by |
-|---------|-------------|
-| `engine/` | `inference/` |
-| `openai_api/` | `adapters/openai/` + `app/` + `config/` |
-| `adapters/prometheus/` | Inline Prometheus text in app/service metrics |
-| `gemma3/attention_vllm.py` | Unified `gemma3/attention.py` |
-
-## Tests that guard the architecture
-
-- `tests/architecture/` — import boundaries + canonical imports
-- `tests/contract/` — `InferenceEngine` protocol
-- `tests/test_continuous_batching.py`, `tests/test_round_robin.py` — scheduler behavior
-- `tests/test_prefix_cache.py`, `tests/test_prefix_caching.py` — prefix cache
-- `tests/test_openai_chat_api.py` — HTTP shapes
-
-## Related scripts
-
-- `scripts/benchmark_decode_throughput.py` — single-request tok/s
-- `scripts/benchmark_concurrent_10.py` — concurrent short gens
-- `scripts/demo_chunked_prefill.py` / `benchmark_chunked_prefill_long_prompts.py` — chunked prefill
+Limits: one model/device/tenant, synchronous tokenization, Python bookkeeping,
+dense gather, full KV storage even for sliding layers, no preemption or graph
+replay, and recorded BF16 reference differences. See
+[performance and validation](../benchmarks/README.md).

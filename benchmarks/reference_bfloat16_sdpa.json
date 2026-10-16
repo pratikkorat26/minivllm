@@ -1,0 +1,94 @@
+{
+  "kind": "reference_validation",
+  "model_dir": "gemma-3-270m",
+  "torch": "2.7.1+cu128",
+  "dtype": "bfloat16",
+  "device": "cuda",
+  "reference": "Transformers sdpa attention, full context recomputed at each step",
+  "rows": [
+    {
+      "prompt": "The purpose of a KV cache is",
+      "max_abs_logit_error": 0.375,
+      "native_token_ids": [
+        531,
+        4762,
+        506,
+        15612,
+        1262,
+        528,
+        496,
+        132182
+      ],
+      "reference_token_ids": [
+        531,
+        4762,
+        506,
+        15612,
+        1262,
+        528,
+        496,
+        132182
+      ],
+      "greedy_match": true,
+      "mismatches": []
+    },
+    {
+      "prompt": "Continuous batching improves GPU utilization because",
+      "max_abs_logit_error": 0.375,
+      "native_token_ids": [
+        625,
+        5862,
+        573,
+        496,
+        8143,
+        1262,
+        8487,
+        236761
+      ],
+      "reference_token_ids": [
+        625,
+        5862,
+        573,
+        919,
+        8143,
+        1262,
+        8487,
+        236761
+      ],
+      "greedy_match": false,
+      "mismatches": [
+        {
+          "step": 3,
+          "reference_logit_gap": 0.0625,
+          "native_logit_gap": 0.0
+        }
+      ]
+    },
+    {
+      "prompt": "A useful engineering tradeoff in serving is",
+      "max_abs_logit_error": 0.375,
+      "native_token_ids": [
+        506,
+        5596,
+        531,
+        2847,
+        496,
+        2509,
+        600,
+        563
+      ],
+      "reference_token_ids": [
+        506,
+        5596,
+        531,
+        2847,
+        496,
+        2509,
+        600,
+        563
+      ],
+      "greedy_match": true,
+      "mismatches": []
+    }
+  ]
+}

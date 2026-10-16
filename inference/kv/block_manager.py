@@ -112,7 +112,11 @@ class KVBlockManager:
             return 0
 
         # Only whole blocks can be reused safely.
-        reusable_tokens = self._align_to_blocks(len(entry.token_ids))
+        # Leave a private final page to recompute logits. Never write a shared
+        # page, including on an exact prompt hit (no copy-on-write needed).
+        reusable_tokens = self._align_to_blocks(
+            min(len(entry.token_ids), len(request.prompt_token_ids) - 1)
+        )
         if reusable_tokens <= 0:
             return 0
 
@@ -153,26 +157,41 @@ class KVBlockManager:
                 self._release_block(block_id)
 
     def can_allocate_for(self, request: RequestState, total_tokens: int) -> bool:
-        existing_blocks = len(request.block_table)
-        if existing_blocks == 0 and self._prefix_cache is not None:
-            # We haven't initialized the request yet; estimate prefix reuse.
-            entry = self._prefix_cache.match_longest("default", request.prompt_token_ids)
-            if entry is not None:
-                existing_blocks = self._align_to_blocks(len(entry.token_ids)) // self.block_size
+        while True:
+            existing_blocks = len(request.block_table)
+            if existing_blocks == 0 and self._prefix_cache is not None:
+                entry = self._prefix_cache.match_longest(
+                    "default", request.prompt_token_ids
+                )
+                if entry is not None:
+                    reusable = min(
+                        len(entry.token_ids), len(request.prompt_token_ids) - 1
+                    )
+                    existing_blocks = self._align_to_blocks(reusable) // self.block_size
+            if self._required_blocks(total_tokens) - existing_blocks <= len(
+                self._free_block_ids
+            ):
+                return True
+            # Re-evaluate the match after each eviction; it may have been evicted.
+            if not self._evict_prefix():
+                return False
 
-        required_blocks = self._required_blocks(total_tokens)
-        additional_blocks = required_blocks - existing_blocks
-        if additional_blocks <= 0:
-            return True
-        return additional_blocks <= len(self._free_block_ids)
+    def _evict_prefix(self) -> bool:
+        victim = None if self._prefix_cache is None else self._prefix_cache.evict_lru()
+        if victim is None:
+            return False
+        for block_id in victim.block_ids:
+            self._release_block(block_id)
+        return True
 
     def ensure_capacity(self, request: RequestState, total_tokens: int) -> bool:
         required_blocks = self._required_blocks(total_tokens)
         additional_blocks = required_blocks - len(request.block_table)
         if additional_blocks <= 0:
             return True
-        if additional_blocks > len(self._free_block_ids):
-            return False
+        while additional_blocks > len(self._free_block_ids):
+            if not self._evict_prefix():
+                return False
 
         new_blocks = self._allocate_new_blocks(additional_blocks)
         request.block_table.extend(new_blocks)
@@ -184,3 +203,9 @@ class KVBlockManager:
         for block_id in request.block_table:
             self._release_block(block_id)
         request.block_table.clear()
+
+    def clear_prefix_cache(self) -> None:
+        if self._prefix_cache is not None:
+            for entry in self._prefix_cache.clear():
+                for block_id in entry.block_ids:
+                    self._release_block(block_id)

@@ -104,7 +104,7 @@ def resolve_tokenizer_path(repo_id: str, local_dir: str) -> str:
 
 
 class GemmaTokenizer:
-    def __init__(self, tokenizer_file_path: str):
+    def __init__(self, tokenizer_file_path: str, *, use_instruct_model: bool = True):
         try:
             from tokenizers import Tokenizer
         except ModuleNotFoundError as exc:
@@ -114,7 +114,7 @@ class GemmaTokenizer:
         self._tok = Tokenizer.from_file(str(Path(tokenizer_file_path)))
         self.end_of_turn_id = self._tok.encode("<end_of_turn>").ids[-1]
         self.pad_token_id = self.end_of_turn_id
-        self.eos_token_id = self.end_of_turn_id
+        self.eos_token_id = self.end_of_turn_id if use_instruct_model else self._tok.token_to_id("<eos>")
 
     def encode(self, text: str) -> list[int]:
         return self._tok.encode(text).ids
@@ -156,9 +156,9 @@ class GemmaRuntime:
         self.model.dtype = self.dtype
 
         tokenizer_path = resolve_tokenizer_path(repo_id=self.repo_id, local_dir=self.local_dir)
-        self.tokenizer = GemmaTokenizer(tokenizer_path)
+        self.tokenizer = GemmaTokenizer(tokenizer_path, use_instruct_model=use_instruct_model)
 
         # reduce-overhead / CUDA graphs help on CUDA; on CPU/MPS they often slow cold starts.
-        if self.device.type == "cuda" and os.environ.get("GEMMA_DISABLE_COMPILE", "0") != "1":
+        if self.device.type == "cuda" and os.environ.get("GEMMA_ENABLE_COMPILE", "0") == "1" and os.environ.get("GEMMA_DISABLE_COMPILE", "0") != "1":
             self.model = torch.compile(self.model, mode="reduce-overhead")
         self.model.eval()

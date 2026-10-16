@@ -14,7 +14,9 @@ from inference import EngineConfig, GenerateRequest, LLMEngine, SamplingConfig
 from runtime import GemmaRuntime, get_device
 
 
-def build_engine(runtime: GemmaRuntime, *, prefill_chunk_size: Optional[int], max_new_tokens: int) -> LLMEngine:
+def build_engine(
+    runtime: GemmaRuntime, *, prefill_chunk_size: Optional[int], max_new_tokens: int
+) -> LLMEngine:
     return LLMEngine(
         runtime=runtime,
         config=EngineConfig(
@@ -107,7 +109,12 @@ async def run_case(
             prefill_chunk_size=prefill_chunk_size,
             max_new_tokens=max_new_tokens,
         )
-        await asyncio.gather(*[engine.generate(GenerateRequest(str(index), prompt)) for index, prompt in enumerate(prompts)])
+        await asyncio.gather(
+            *[
+                engine.generate(GenerateRequest(str(index), prompt))
+                for index, prompt in enumerate(prompts)
+            ]
+        )
         await engine.shutdown()
 
     elapsed_values = []
@@ -119,7 +126,12 @@ async def run_case(
             max_new_tokens=max_new_tokens,
         )
         started = time.perf_counter()
-        results = await asyncio.gather(*[engine.generate(GenerateRequest(str(index), prompt)) for index, prompt in enumerate(prompts)])
+        results = await asyncio.gather(
+            *[
+                engine.generate(GenerateRequest(str(index), prompt))
+                for index, prompt in enumerate(prompts)
+            ]
+        )
         elapsed_s = time.perf_counter() - started
         elapsed_values.append(elapsed_s)
         last_results = results
@@ -131,16 +143,38 @@ async def run_case(
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(description="Benchmark long concurrent prompts with and without chunked prefill")
-    parser.add_argument("--num-prompts", type=int, default=4, help="Number of concurrent long prompts")
-    parser.add_argument("--repeat", type=int, default=40, help="How many times to repeat each long prompt seed")
-    parser.add_argument("--chunk-size", type=int, default=64, help="Chunk size for the chunked-prefill run")
-    parser.add_argument("--max-new-tokens", type=int, default=32, help="Generated tokens per request")
-    parser.add_argument("--warmup-runs", type=int, default=1, help="Warmup runs before timing")
-    parser.add_argument("--benchmark-runs", type=int, default=3, help="Number of timed runs per case")
+    parser = argparse.ArgumentParser(
+        description="Benchmark long concurrent prompts with and without chunked prefill"
+    )
+    parser.add_argument(
+        "--num-prompts", type=int, default=4, help="Number of concurrent long prompts"
+    )
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=40,
+        help="How many times to repeat each long prompt seed",
+    )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=64,
+        help="Chunk size for the chunked-prefill run",
+    )
+    parser.add_argument(
+        "--max-new-tokens", type=int, default=32, help="Generated tokens per request"
+    )
+    parser.add_argument(
+        "--warmup-runs", type=int, default=1, help="Warmup runs before timing"
+    )
+    parser.add_argument(
+        "--benchmark-runs", type=int, default=3, help="Number of timed runs per case"
+    )
     args = parser.parse_args()
 
-    prompts = make_prompts(num_prompts=max(1, args.num_prompts), repeat=max(1, args.repeat))
+    prompts = make_prompts(
+        num_prompts=max(1, args.num_prompts), repeat=max(1, args.repeat)
+    )
     runtime = GemmaRuntime(
         choose_model="270m",
         use_instruct_model=True,
@@ -173,7 +207,9 @@ async def main() -> None:
     print(f"no_chunk_avg_elapsed_s={no_chunk_elapsed:.4f}")
     print(f"chunked_avg_elapsed_s={chunked_elapsed:.4f}")
     if chunked_elapsed > 0:
-        print(f"speed_ratio_no_chunk_over_chunked={no_chunk_elapsed / chunked_elapsed:.3f}")
+        print(
+            f"speed_ratio_no_chunk_over_chunked={no_chunk_elapsed / chunked_elapsed:.3f}"
+        )
 
 
 if __name__ == "__main__":

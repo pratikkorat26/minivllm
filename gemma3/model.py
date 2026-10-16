@@ -23,12 +23,24 @@ GEMMA3_CONFIG_270M = {
     "rope_base": 1_000_000.0,
     "sliding_window": 512,
     "layer_types": [
-        "sliding_attention", "sliding_attention", "sliding_attention",
-        "sliding_attention", "sliding_attention", "full_attention",
-        "sliding_attention", "sliding_attention", "sliding_attention",
-        "sliding_attention", "sliding_attention", "full_attention",
-        "sliding_attention", "sliding_attention", "sliding_attention",
-        "sliding_attention", "sliding_attention", "full_attention",
+        "sliding_attention",
+        "sliding_attention",
+        "sliding_attention",
+        "sliding_attention",
+        "sliding_attention",
+        "full_attention",
+        "sliding_attention",
+        "sliding_attention",
+        "sliding_attention",
+        "sliding_attention",
+        "sliding_attention",
+        "full_attention",
+        "sliding_attention",
+        "sliding_attention",
+        "sliding_attention",
+        "sliding_attention",
+        "sliding_attention",
+        "full_attention",
     ],
     "dtype": torch.bfloat16,
     "query_pre_attn_scalar": 256,
@@ -52,9 +64,15 @@ class TransformerBlock(nn.Module):
     ):
         super().__init__()
         self.att = GroupedQueryAttention(
-            d_model=emb_dim, num_heads=n_heads, num_kv_groups=n_kv_groups,
-            head_dim=head_dim, rope=rope, sliding_window=sliding_window,
-            qk_norm=qk_norm, query_pre_attn_scalar=query_pre_attn_scalar, dtype=dtype,
+            d_model=emb_dim,
+            num_heads=n_heads,
+            num_kv_groups=n_kv_groups,
+            head_dim=head_dim,
+            rope=rope,
+            sliding_window=sliding_window,
+            qk_norm=qk_norm,
+            query_pre_attn_scalar=query_pre_attn_scalar,
+            dtype=dtype,
         )
         self.ff = FeedForward(emb_dim=emb_dim, hidden_dim=hidden_dim, dtype=dtype)
         self.input_layernorm = RMSNorm(emb_dim)
@@ -69,9 +87,16 @@ class TransformerBlock(nn.Module):
         block_tables: torch.Tensor,
         kv_lens: torch.Tensor,
         paged_kv_cache: PagedKVCache,
+        max_seq_len: Optional[int] = None,
     ) -> torch.Tensor:
         h = self.input_layernorm(x)
-        att_out = self.att(h, block_tables=block_tables, kv_lens=kv_lens, paged_kv_cache=paged_kv_cache)
+        att_out = self.att(
+            h,
+            block_tables=block_tables,
+            kv_lens=kv_lens,
+            paged_kv_cache=paged_kv_cache,
+            max_seq_len=max_seq_len,
+        )
         x = x + self.post_attention_layernorm(att_out)
         h = self.pre_feedforward_layernorm(x)
         ff_out = self.ff(h)
@@ -107,19 +132,31 @@ class Gemma3Model(nn.Module):
         self.embed_scale = math.sqrt(emb_dim)
         self.tok_emb = nn.Embedding(vocab_size, emb_dim, dtype=dtype)
 
-        rope_local = RotaryEmbedding(dim=head_dim, theta=rope_local_base, max_position_embeddings=context_length)
-        rope_global = RotaryEmbedding(dim=head_dim, theta=rope_base, max_position_embeddings=context_length)
+        rope_local = RotaryEmbedding(
+            dim=head_dim, theta=rope_local_base, max_position_embeddings=context_length
+        )
+        rope_global = RotaryEmbedding(
+            dim=head_dim, theta=rope_base, max_position_embeddings=context_length
+        )
 
         blocks: List[TransformerBlock] = []
         for layer_type in layer_types:
             rope = rope_local if layer_type == "sliding_attention" else rope_global
             layer_window = sliding_window if layer_type == "sliding_attention" else None
-            blocks.append(TransformerBlock(
-                emb_dim=emb_dim, hidden_dim=hidden_dim, n_heads=n_heads,
-                n_kv_groups=n_kv_groups, head_dim=head_dim, rope=rope,
-                sliding_window=layer_window, qk_norm=qk_norm,
-                query_pre_attn_scalar=query_pre_attn_scalar, dtype=dtype,
-            ))
+            blocks.append(
+                TransformerBlock(
+                    emb_dim=emb_dim,
+                    hidden_dim=hidden_dim,
+                    n_heads=n_heads,
+                    n_kv_groups=n_kv_groups,
+                    head_dim=head_dim,
+                    rope=rope,
+                    sliding_window=layer_window,
+                    qk_norm=qk_norm,
+                    query_pre_attn_scalar=query_pre_attn_scalar,
+                    dtype=dtype,
+                )
+            )
 
         self.blocks = nn.ModuleList(blocks)
         self.final_norm = RMSNorm(emb_dim)
@@ -138,9 +175,12 @@ class Gemma3Model(nn.Module):
         cache_device = device or self.tok_emb.weight.device
         return [
             PagedKVCache.empty(
-                num_blocks=num_blocks, num_kv_groups=self.num_kv_groups,
-                block_size=block_size, head_dim=self.head_dim,
-                device=cache_device, dtype=self.dtype,
+                num_blocks=num_blocks,
+                num_kv_groups=self.num_kv_groups,
+                block_size=block_size,
+                head_dim=self.head_dim,
+                device=cache_device,
+                dtype=self.dtype,
             )
             for _ in self.blocks
         ]
@@ -154,18 +194,31 @@ class Gemma3Model(nn.Module):
         paged_kv_caches: List[PagedKVCache],
         compute_logits: bool = True,
         logits_last_only: bool = True,
+        max_seq_len: Optional[int] = None,
     ):
         if input_ids.ndim != 2:
             raise ValueError("input_ids must be [B, T]")
         if input_ids.shape[1] > self.context_length:
             raise ValueError("input sequence length exceeds context_length")
         if paged_kv_caches is not None and len(paged_kv_caches) != len(self.blocks):
-            raise ValueError("paged_kv_caches must have one entry per transformer block")
+            raise ValueError(
+                "paged_kv_caches must have one entry per transformer block"
+            )
 
-        x = self.tok_emb(input_ids) * self.embed_scale
+        if max_seq_len is None:
+            max_seq_len = int(kv_lens.max().item()) + input_ids.shape[1]
+        x = self.tok_emb(input_ids) * torch.tensor(
+            self.embed_scale, dtype=self.tok_emb.weight.dtype, device=input_ids.device
+        )
 
         for i, block in enumerate(self.blocks):
-            x = block(x, block_tables=block_tables, kv_lens=kv_lens, paged_kv_cache=paged_kv_caches[i])
+            x = block(
+                x,
+                block_tables=block_tables,
+                kv_lens=kv_lens,
+                paged_kv_cache=paged_kv_caches[i],
+                max_seq_len=max_seq_len,
+            )
 
         x = self.final_norm(x)
         if not compute_logits:

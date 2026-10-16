@@ -1,6 +1,7 @@
 """Public async inference-engine façade."""
 
 from typing import AsyncIterator
+from contextlib import aclosing
 
 from .config import EngineConfig
 from .executor import PagedModelExecutor
@@ -25,8 +26,9 @@ class LLMEngine:
         return await self.scheduler.generate(request)
 
     async def stream(self, request: GenerateRequest) -> AsyncIterator[StreamEvent]:
-        async for event in self.scheduler.stream(request):
-            yield event
+        async with aclosing(self.scheduler.stream(request)) as events:
+            async for event in events:
+                yield event
 
     async def abort(self, request_id: str) -> None:
         await self.scheduler.abort(request_id)

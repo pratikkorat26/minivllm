@@ -85,7 +85,7 @@ class PrefixCache:
         """Insert a prefix into the cache, evicting old entries if needed.
 
         Returns:
-            A tuple of (new_or_existing_entry, evicted_entries).  Callers
+            A tuple of (new_entry_or_none, evicted_entries).  Callers
             must release the physical blocks belonging to ``evicted_entries``.
         """
         evicted: List[PrefixCacheEntry] = []
@@ -99,16 +99,17 @@ class PrefixCache:
         existing = self._entries.get(key)
         if existing is not None:
             existing.last_accessed = time.perf_counter()
-            return existing, evicted
+            # No new ownership was created. Callers must not acquire again.
+            return None, evicted
 
         while len(self._entries) >= self.max_entries:
-            victim = self._evict_lru()
+            victim = self.evict_lru()
             if victim is None:
                 break
             evicted.append(victim)
 
         if len(self._entries) >= self.max_entries:
-            # Cache is full and every entry is in use; cannot insert.
+            # No entry can be inserted. Active pages remain protected by block refs.
             return None, evicted
 
         entry = PrefixCacheEntry(
@@ -119,7 +120,7 @@ class PrefixCache:
         self._entries[key] = entry
         return entry, evicted
 
-    def _evict_lru(self) -> Optional[PrefixCacheEntry]:
+    def evict_lru(self) -> Optional[PrefixCacheEntry]:
         if not self._entries:
             return None
         oldest_key = min(self._entries, key=lambda k: self._entries[k].last_accessed)
@@ -129,6 +130,8 @@ class PrefixCache:
         """Mark an entry as recently used."""
         entry.last_accessed = time.perf_counter()
 
-    def clear(self) -> None:
+    def clear(self) -> List[PrefixCacheEntry]:
         """Remove all entries.  Callers must release returned block references."""
+        entries = list(self._entries.values())
         self._entries.clear()
+        return entries

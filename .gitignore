@@ -6,3 +6,5 @@ __pycache__/
 .venv/
 *.egg-info/
 .idea/
+.test-deps/
+.pytest_cache/

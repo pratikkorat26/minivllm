@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, aclosing
+import asyncio
 import json
 import logging
 import time
@@ -29,7 +30,9 @@ def _service_unavailable_message(fastapi_app: FastAPI) -> str:
 def get_service(fastapi_app: FastAPI) -> ChatCompletionService:
     service = getattr(fastapi_app.state, "service", None)
     if service is None:
-        raise HTTPException(status_code=503, detail=_service_unavailable_message(fastapi_app))
+        raise HTTPException(
+            status_code=503, detail=_service_unavailable_message(fastapi_app)
+        )
     return service
 
 
@@ -63,7 +66,23 @@ def create_app(
     @fastapi_app.middleware("http")
     async def request_logging_and_size_limit(request: Request, call_next):
         content_length = request.headers.get("content-length")
-        if content_length is not None and int(content_length) > max_request_bytes:
+        try:
+            body_size = int(content_length) if content_length is not None else 0
+            if body_size < 0:
+                raise ValueError
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content=error_response(
+                    APIError(
+                        "invalid content-length",
+                        status_code=400,
+                        error_type="invalid_request_error",
+                        code="invalid_content_length",
+                    )
+                ),
+            )
+        if body_size > max_request_bytes:
             return JSONResponse(
                 status_code=413,
                 content=error_response(
@@ -99,7 +118,9 @@ def create_app(
     async def readyz() -> dict:
         service = getattr(fastapi_app.state, "service", None)
         if service is None:
-            raise HTTPException(status_code=503, detail=_service_unavailable_message(fastapi_app))
+            raise HTTPException(
+                status_code=503, detail=_service_unavailable_message(fastapi_app)
+            )
         return {"status": "ready"}
 
     @fastapi_app.get("/v1/models")
@@ -132,7 +153,9 @@ def create_app(
     async def metrics(request: Request):
         service = get_service(request.app)
         if hasattr(service, "metrics_text"):
-            return PlainTextResponse(service.metrics_text(), media_type="text/plain; version=0.0.4")
+            return PlainTextResponse(
+                service.metrics_text(), media_type="text/plain; version=0.0.4"
+            )
         return PlainTextResponse("", media_type="text/plain")
 
     @fastapi_app.post("/v1/chat/completions")
@@ -141,19 +164,38 @@ def create_app(
         try:
             app_request = to_app_request(payload)
             if payload.stream:
+
                 async def sse_events():
-                    async for event in service.stream(app_request):
-                        yield event_to_sse(event)
+                    async with aclosing(service.stream(app_request)) as events:
+                        async for event in events:
+                            yield event_to_sse(event)
+
                 return StreamingResponse(
                     sse_events(),
                     media_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
                 )
-            result = await service.create(app_request)
+            generation = asyncio.create_task(service.create(app_request))
+            try:
+                while not generation.done():
+                    done, _ = await asyncio.wait({generation}, timeout=0.05)
+                    if done:
+                        break
+                    if await request.is_disconnected():
+                        raise HTTPException(
+                            status_code=499, detail="client disconnected"
+                        )
+                result = await generation
+            finally:
+                if not generation.done():
+                    generation.cancel()
+                    await asyncio.gather(generation, return_exceptions=True)
             return JSONResponse(chat_completion_to_openai(result))
         except AppError as exc:
             api_error = app_error_to_api_error(exc)
-            return JSONResponse(status_code=api_error.status_code, content=error_response(api_error))
+            return JSONResponse(
+                status_code=api_error.status_code, content=error_response(api_error)
+            )
         except RuntimeError:
             LOGGER.exception("chat completion failed")
             api_error = APIError("model execution failed")
