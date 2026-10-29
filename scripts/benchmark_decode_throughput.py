@@ -13,9 +13,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from gemma3.tokenizer import apply_chat_template
+from lfm3.tokenizer import apply_chat_template
 from inference import EngineConfig, GenerateRequest, LLMEngine, SamplingConfig
-from runtime import GemmaRuntime, get_device, preferred_dtype
+from runtime import Lfm3Runtime, get_device, preferred_dtype
 
 
 async def run_once(
@@ -60,18 +60,24 @@ async def main() -> None:
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--runs", type=int, default=2)
+    parser.add_argument(
+        "--quantization", choices=("none", "int8", "int4"), default="none"
+    )
     args = parser.parse_args()
 
     device = get_device()
     dtype = preferred_dtype(device)
-    print(f"device={device} dtype={dtype}")
+    print(f"device={device} dtype={dtype} quantization={args.quantization}")
 
-    runtime = GemmaRuntime(choose_model="270m", use_instruct_model=True, device=device)
+    runtime = Lfm3Runtime(
+        use_instruct_model=True,
+        device=device,
+        quantization=args.quantization,
+    )
     prompt_tokens = len(runtime.tokenizer.encode(apply_chat_template(args.prompt)))
     engine = LLMEngine(
         runtime=runtime,
         config=EngineConfig(
-            choose_model="270m",
             use_instruct_model=True,
             max_new_tokens=args.max_new_tokens,
             sampling=SamplingConfig(

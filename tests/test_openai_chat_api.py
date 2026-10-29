@@ -50,7 +50,7 @@ class FakeChatService:
         }
 
     def metrics_text(self):
-        return f'gemma_requests_total{{model="{SUPPORTED_MODEL}"}} {self.requests_total}\n'
+        return f'lfm3_requests_total{{model="{SUPPORTED_MODEL}"}} {self.requests_total}\n'
 
 
 @unittest.skipUnless(FASTAPI_AVAILABLE, "fastapi is not installed")
@@ -132,7 +132,7 @@ class OpenAIChatAPITests(unittest.TestCase):
         response = self.client.get("/metrics")
         self.assertEqual(response.status_code, 200)
         self.assertIn("text/plain", response.headers["content-type"])
-        self.assertIn("gemma_requests_total", response.text)
+        self.assertIn("lfm3_requests_total", response.text)
 
     def test_accepts_extended_sampling_fields(self):
         response = self.client.post(

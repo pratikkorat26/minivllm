@@ -28,7 +28,6 @@ class SamplingConfig:
 
 @dataclass(frozen=True)
 class EngineConfig:
-    choose_model: str = "270m"
     use_instruct_model: bool = True
     max_new_tokens: int = 180
     sampling: SamplingConfig = field(default_factory=SamplingConfig)

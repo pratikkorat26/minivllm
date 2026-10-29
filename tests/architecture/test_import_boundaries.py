@@ -29,8 +29,8 @@ def _has_forbidden(imports: set[str], forbidden: tuple[str, ...]) -> list[str]:
 
 
 class ImportBoundaryTests(unittest.TestCase):
-    def test_gemma3_has_no_serving_dependencies(self):
-        imports = _imports_for("gemma3")
+    def test_lfm3_has_no_serving_dependencies(self):
+        imports = _imports_for("lfm3")
         forbidden = ("app", "adapters", "runtime", "fastapi")
         self.assertEqual(_has_forbidden(imports, forbidden), [])
 

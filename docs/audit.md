@@ -1,5 +1,11 @@
 # Repository audit — 2026-10-15
 
+> **Historical pre-LFM3 baseline.** This audit records the original Gemma 3
+> implementation and the changes planned before the LFM3 migration. Gemma
+> references below are historical; the current model is LFM3-1.7B. See
+> [architecture](architecture.md) and the [README](../README.md) for current
+> behavior. Quantization has since been added.
+
 Completed before implementation. Baseline: 51 passed, 5 skipped (real-model
 tests opt in and require instruct assets). Windows, Python 3.12.10, PyTorch
 2.7.1+cu128, RTX 4070 Laptop 8 GB, SM89. No custom CUDA/Triton kernels exist.
@@ -69,8 +75,9 @@ under `benchmarks/`, and study diagrams in `docs/`. No new serving framework.
 ## Missing techniques and tradeoffs
 
 No mixed ragged batched prefill, fused paged attention, graph capture/replay,
-preemption/recompute, speculative decoding, quantization, distributed serving,
-or overlapping scheduler/GPU pipeline. These should not be claimed as implemented.
+preemption/recompute, speculative decoding, distributed serving, or overlapping
+scheduler/GPU pipeline. Weight-only int8/int4 quantization was added after this
+audit and should not be confused with the pre-audit state.
 Conservative growth reservation sacrifices admission density to guarantee progress
 without adding a preemption subsystem. Fair alternating phase turns are simpler
 than mixed prefill/decode forwards. Prefix reuse remains bounded exact-entry

@@ -1,17 +1,20 @@
 import torch
 
-from gemma3.attention import RMSNorm
+from lfm3.attention import RMSNorm
 from inference.sampling import apply_repetition_penalty_, sample_next_token
 
 
-def test_bfloat16_norm_adds_scale_in_float32():
+def test_bfloat16_norm_applies_unit_weight_in_float32():
     norm = RMSNorm(4).to(dtype=torch.bfloat16)
-    norm.scale.data.fill_(0.01)
-    x = torch.tensor([[1.0, 2.0, 3.0, 4.0]], dtype=torch.bfloat16)
-    normalized = x.float() * torch.rsqrt(
-        x.float().square().mean(-1, keepdim=True) + norm.eps
+    norm.weight.data.copy_(
+        torch.tensor([0.5, 1.0, 1.5, 2.0], dtype=torch.bfloat16)
     )
-    expected = (normalized * (1 + norm.scale.float())).to(x.dtype)
+    x = torch.tensor([[1.0, 2.0, 3.0, 4.0]], dtype=torch.bfloat16)
+    normalized = (
+        x.float()
+        * torch.rsqrt(x.float().square().mean(-1, keepdim=True) + norm.eps)
+    ).to(x.dtype)
+    expected = norm.weight * normalized
     torch.testing.assert_close(norm(x), expected, atol=0, rtol=0)
 
 

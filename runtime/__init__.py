@@ -1,5 +1,7 @@
 from .provider import (
-    GemmaRuntime,
+    DEFAULT_MODEL_ID,
+    Lfm3Runtime,
+    Lfm3Tokenizer,
     configure_cpu_threads,
     get_device,
     preferred_dtype,
@@ -7,7 +9,9 @@ from .provider import (
 )
 
 __all__ = [
-    "GemmaRuntime",
+    "DEFAULT_MODEL_ID",
+    "Lfm3Runtime",
+    "Lfm3Tokenizer",
     "configure_cpu_threads",
     "get_device",
     "preferred_dtype",

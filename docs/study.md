@@ -1,7 +1,8 @@
 # Study guide
 
-Read [architecture](architecture.md), then trace `routes.py` -> `app/service.py` ?
-`inference/scheduler/scheduler.py` -> `executor.py` -> `gemma3/attention.py`.
+Read [architecture](architecture.md), then trace `routes.py` -> `app/service.py` ->
+`inference/scheduler/scheduler.py` -> `executor.py` -> `lfm3/model.py`, where
+short-convolution and attention blocks alternate.
 
 ## Token budgets and fairness
 
@@ -37,13 +38,16 @@ implementation uses separate forwards rather than a fused mixed batch.
 ![Illustrative page sharing and analytical capacity](figures/kv_study.png)
 
 ```text
-18 layers * 2 (K,V) * 1 KV head * 256 head dim * 2 bytes = 18,432 bytes / KV token
-32,768 physical token slots = 576 MiB of KV tensors
+11 attention layers * 2 (K,V) * 4 KV heads * 128 head dim * 2 bytes
+    = 22,528 bytes / KV token
+32,768 physical token slots = 704 MiB of KV tensors
 ```
 
-This excludes weights, RoPE, activations and PyTorch's reserve. Page size 16 can
-waste 15 tail positions per private reservation. Reserving future growth adds
-unused capacity when requests stop early.
+This excludes weights, RoPE, conv state, activations and PyTorch's reserve. The
+13 conv layers add `13 * 2,048 * 6 * 2 bytes ~= 312 KiB` of state per request.
+Page size 16 can waste 15 tail positions per private reservation. Reserving
+future growth adds unused capacity when requests stop early. Prefix caching is
+disabled for LFM3 because a KV-only reuse would not restore conv state.
 
 Trace references: cache (1), A attaches (2), B attaches (3), cache evicts (2), A
 finishes (1), B finishes (0 -> free-list). Evicting an entry does not necessarily
@@ -53,16 +57,18 @@ free physical pages. Explain why exact prompt hits recompute a private final pag
 
 ![Measured attention latency](figures/attention.png)
 
-Storage paging removes contiguous reservation requirements. A fused paged kernel
-would additionally avoid dense KV reconstruction; this engine does not implement
-one. Estimate bytes gathered per layer/token at 512, 2048 and 8192 context.
-Sliding masking alone does not reduce gather length here.
+Storage paging removes contiguous reservation requirements. The optional Triton
+decode kernel in `lfm3/paged_attention.py` also avoids dense KV reconstruction and
+reads only the live sliding window. Prefill and the portable SDPA fallback still
+gather dense KV. Estimate bytes read by each path at 512, 2048 and 8192 context.
 
 Explain why `.item()` and Python tests on CUDA tensors synchronize the host.
 The executor knows sequence bounds on CPU; sampled IDs still require one batch
-transfer to drive serving. FP32 logits match the reference closely, while BF16
-has a recorded greedy mismatch. Investigate accumulation order, kernel choice and
-quantization before treating precision differences as harmless.
+transfer to drive serving. The tiny FP32 LFM3 model matches the reference to about
+`1.27e-7`; real BF16 has one near-tie greedy mismatch on a raw prompt. Quantization
+adds another controlled approximation: int8 preserved the tested greedy output,
+while experimental int4 NF4 changed stop behavior. Investigate accumulation order,
+kernel choice and quantization before treating precision differences as harmless.
 
 ## Interpret the measurements
 

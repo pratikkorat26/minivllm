@@ -52,7 +52,9 @@ def main():
         x, [f"B={r['batch']}, S={r['context']}\nQ={r['query']}" for r in before["rows"]]
     )
     ax.set_ylabel("Wall time per attention forward (ms)")
-    ax.set_title("RTX 4070 Laptop · synthetic BF16 attention · 50 timed iterations")
+    ax.set_title(
+        "Historical Gemma 270M synthetic BF16 attention · 50 timed iterations"
+    )
     ax.legend()
     ax.grid(axis="y", alpha=0.2)
     save(fig, args.output, "attention")
@@ -105,7 +107,7 @@ def main():
         ax.grid(alpha=0.2)
         ax.legend(fontsize=8)
     fig.suptitle(
-        "Gemma 270M base · RTX 4070 Laptop · BF16 · 16-token cap · 3 closed-loop waves",
+        "Historical Gemma 270M base · RTX 4070 Laptop · BF16 · 16-token cap",
         y=1.04,
     )
     save(fig, args.output, "engine")
@@ -134,13 +136,13 @@ def main():
     axes[0].axis("off")
     axes[0].set_title("Logical block tables → shared physical pages")
     tokens = np.arange(0, 32769, 256)
-    # Exact model layout: layers * K/V * heads * dim * BF16 bytes.
-    mib = tokens * 18 * 2 * 1 * 256 * 2 / 1024**2
+    # LFM3 layout: 11 attention layers * K/V * 4 KV heads * 128 dim * BF16 bytes.
+    mib = tokens * 11 * 2 * 4 * 128 * 2 / 1024**2
     axes[1].plot(tokens, mib, color="#16827c")
     axes[1].set_xlabel("Physical KV token slots (all requests combined)")
     axes[1].set_ylabel("KV storage (MiB)")
     axes[1].grid(alpha=0.2)
-    axes[1].set_title("Gemma 270M BF16 KV capacity (analytical)")
+    axes[1].set_title("LFM3-1.7B BF16 KV capacity (analytical)")
     fig.suptitle(
         "Study diagrams · mapping is illustrative; memory curve is a formula", y=1.04
     )

@@ -58,7 +58,7 @@ def create_app(
             await service.shutdown()
 
     fastapi_app = FastAPI(
-        title="Gemma OpenAI-like API",
+        title="LFM3 OpenAI-like API",
         version="0.1.0",
         lifespan=lifespan,
     )
@@ -133,7 +133,7 @@ def create_app(
                 "object": "list",
                 "data": [
                     {
-                        "id": "gemma-3-270m-it",
+                        "id": "LiquidAI/LFM3-1.7B",
                         "object": "model",
                         "created": 0,
                         "owned_by": "local",

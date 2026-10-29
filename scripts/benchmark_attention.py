@@ -1,4 +1,4 @@
-"""Fixed-shape attention microbenchmark; weights/data are synthetic, not a model benchmark."""
+"""Synthetic LFM3-shaped attention microbenchmark, not a model benchmark."""
 
 import argparse
 import json
@@ -9,8 +9,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch
-from gemma3.attention import GroupedQueryAttention
-from gemma3.paged_kv import PagedKVCache
+from lfm3.attention import GroupedQueryAttention
+from lfm3.paged_kv import PagedKVCache
 
 
 def main():
@@ -24,13 +24,17 @@ def main():
     rows = []
     for batch in (1, 4):
         for context in (128, 512):
-            att = GroupedQueryAttention(640, 4, 1, 256, dtype=dtype).to(device).eval()
+            att = (
+                GroupedQueryAttention(2048, 16, 4, 128, dtype=dtype)
+                .to(device)
+                .eval()
+            )
             blocks = (context + 31 + 15) // 16
             cache = PagedKVCache.empty(
                 num_blocks=blocks * batch,
-                num_kv_groups=1,
+                num_kv_groups=4,
                 block_size=16,
-                head_dim=256,
+                head_dim=128,
                 device=device,
                 dtype=dtype,
             )
@@ -38,7 +42,7 @@ def main():
             cache.v_blocks.normal_()
             tables = torch.arange(blocks * batch, device=device).reshape(batch, blocks)
             for query in (1, 32):
-                x = torch.randn(batch, query, 640, device=device, dtype=dtype)
+                x = torch.randn(batch, query, 2048, device=device, dtype=dtype)
                 lengths = torch.full(
                     (batch,), context - 1, device=device, dtype=torch.long
                 )

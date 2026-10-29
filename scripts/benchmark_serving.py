@@ -109,7 +109,7 @@ async def run(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default="http://127.0.0.1:8000")
-    parser.add_argument("--model", default="gemma-3-270m-it")
+    parser.add_argument("--model", default="LiquidAI/LFM3-1.7B")
     parser.add_argument("--label", default="minivllm")
     parser.add_argument("--tokens", type=int, default=32)
     parser.add_argument("--concurrency", type=int, nargs="+", default=[1, 2, 4, 8])

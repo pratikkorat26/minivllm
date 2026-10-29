@@ -1,0 +1,33 @@
+{
+  "kind": "real_engine_split_kv_comparison",
+  "device": "NVIDIA GeForce RTX 4070 Laptop GPU",
+  "torch": "2.14.0+cu130",
+  "compile": true,
+  "concurrency": 1,
+  "max_new_tokens": 64,
+  "repeats": 3,
+  "runs": [
+    {
+      "mode": "single_pass",
+      "prompt_tokens": 2048,
+      "warmup_s": 69.58611752899998,
+      "generated_tokens": 192,
+      "elapsed_s": 4.33024849200001,
+      "wave_seconds": [
+        1.4255990969999743,
+        1.4497536769999897,
+        1.4547794040000213
+      ],
+      "request_output_tokens_per_s": 44.33925682434013,
+      "decode_tokens": 189,
+      "decode_worker_s": 3.4687039180001875,
+      "decode_worker_tokens_per_s": 54.487210343673325,
+      "token_ids_sha256": "e1bb4a09269ccd31d9d74df843eaee4974033e62b940ae10f2bb45c278102775",
+      "stop_reasons": [
+        "max_new_tokens",
+        "max_new_tokens",
+        "max_new_tokens"
+      ]
+    }
+  ]
+}

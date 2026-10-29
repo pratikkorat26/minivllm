@@ -1,0 +1,46 @@
+{
+  "model": "LiquidAI/LFM3-1.7B",
+  "device": "NVIDIA GeForce RTX 4070 Laptop GPU",
+  "environment": "WSL2, existing /home/pratik/pyenv/inference environment",
+  "dtype": "bfloat16",
+  "kind": "direct_custom_engine_closed_loop",
+  "compile": true,
+  "concurrency": 128,
+  "decode_batch_size": 128,
+  "max_batch_tokens": 256,
+  "max_kv_cache_tokens": 16384,
+  "max_new_tokens": 32,
+  "repeats": 3,
+  "notes": [
+    "One sequential run per variant; clocks and power not locked.",
+    "Single-request warmup and full-concurrency warmup excluded from measurement.",
+    "Not an HTTP benchmark or a quality evaluation.",
+    "BF16 sample output changed after projection packing."
+  ],
+  "runs": [
+    {
+      "variant": "separate_projections_sdpa",
+      "generated_tokens": 12288,
+      "elapsed_s": 11.435,
+      "aggregate_tokens_per_s": 1074.63,
+      "warmup_s": 157.860,
+      "peak_allocated_gib": 3.72
+    },
+    {
+      "variant": "packed_projections_sdpa",
+      "generated_tokens": 12288,
+      "elapsed_s": 11.054,
+      "aggregate_tokens_per_s": 1111.64,
+      "warmup_s": 155.387,
+      "peak_allocated_gib": 3.72
+    },
+    {
+      "variant": "packed_projections_paged_decode",
+      "generated_tokens": 12288,
+      "elapsed_s": 10.474,
+      "aggregate_tokens_per_s": 1173.19,
+      "warmup_s": 140.575,
+      "peak_allocated_gib": 3.72
+    }
+  ]
+}

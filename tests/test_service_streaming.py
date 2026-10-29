@@ -36,7 +36,7 @@ def collect(chunks, stops):
     )
     request = ChatCompletionRequest(
         messages=[ChatMessage("user", "hello")],
-        model="gemma-3-270m-it",
+        model="LiquidAI/LFM3-1.7B",
         stop=stops,
         include_usage=True,
     )

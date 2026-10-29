@@ -4,7 +4,7 @@ from typing import List
 from .types import ChatMessage
 
 DANGEROUS_TOKENS = re.compile(
-    r"<start_of_turn>|<end_of_turn>|<eos>|<bos>|<func_call>|<receiver_bot>",
+    r"<\|im_start\|>|<\|im_end\|>|<\|startoftext\|>|<\|endoftext\|>|<\|pad\|>",
     re.IGNORECASE,
 )
 CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -18,18 +18,19 @@ def sanitize_user_content(content: str) -> str:
     return content
 
 
-def messages_to_gemma_prompt(messages: List[ChatMessage]) -> str:
-    role_map = {
-        "system": "user",
-        "user": "user",
-        "assistant": "model",
-    }
-    parts = []
+def messages_to_lfm3_prompt(
+    messages: List[ChatMessage], *, enable_thinking: bool = False
+) -> str:
+    parts = ["<|startoftext|>"]
     for message in messages:
-        mapped = role_map[message.role]
-        sanitized = sanitize_user_content(message.content)
-        if len(sanitized) > MAX_CONTENT_LENGTH:
-            sanitized = sanitized[:MAX_CONTENT_LENGTH]
-        parts.append(f"<start_of_turn>{mapped}\n{sanitized}<end_of_turn>\n")
-    parts.append("<start_of_turn>model\n")
+        content = sanitize_user_content(message.content)
+        if len(content) > MAX_CONTENT_LENGTH:
+            content = content[:MAX_CONTENT_LENGTH]
+        if message.role == "assistant" and "<think>" not in content:
+            content = f"<think></think>{content}"
+        parts.append(
+            f"<|im_start|>{message.role}\n{content}<|im_end|>\n"
+        )
+    opening = "<think>" if enable_thinking else "<think></think>"
+    parts.append(f"<|im_start|>assistant\n{opening}")
     return "".join(parts)

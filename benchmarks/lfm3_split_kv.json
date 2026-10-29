@@ -1,0 +1,23 @@
+{
+  "kind": "synthetic_one_layer_decode_attention_microbenchmark",
+  "device": "NVIDIA GeForce RTX 4070 Laptop GPU",
+  "dtype": "bfloat16",
+  "query_heads": 16,
+  "kv_heads": 4,
+  "head_dim": 128,
+  "page_size": 16,
+  "warmups": 5,
+  "repeats": 100,
+  "cuda_graph_replay": true,
+  "notes": [
+    "Not whole-model throughput; excludes projections and cache writes.",
+    "Single sequential run per shape; clocks and power not locked.",
+    "Both variants directly read paged KV; no dense SDPA in these comparisons."
+  ],
+  "runs": [
+    {"batch": 1, "context": 2048, "window": null, "single_pass_ms": 0.064, "auto_splits": 4, "split_ms": 0.023},
+    {"batch": 1, "context": 8192, "window": null, "single_pass_ms": 0.251, "auto_splits": 16, "split_ms": 0.049},
+    {"batch": 16, "context": 2048, "window": null, "single_pass_ms": 0.345, "auto_splits": 2, "split_ms": 0.296},
+    {"batch": 16, "context": 8192, "window": null, "single_pass_ms": 1.536, "auto_splits": 8, "split_ms": 1.188}
+  ]
+}

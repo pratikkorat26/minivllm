@@ -3,7 +3,7 @@ from typing import List, Literal, Optional, Union
 from pydantic import BaseModel, Field, field_validator
 
 
-SUPPORTED_MODEL = "gemma-3-270m-it"
+SUPPORTED_MODEL = "LiquidAI/LFM3-1.7B"
 MAX_MESSAGES = 64
 MAX_TOTAL_CONTENT_CHARS = 65_536
 MAX_STOP_SEQUENCES = 4

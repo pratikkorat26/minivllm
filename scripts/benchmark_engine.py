@@ -13,11 +13,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch
 from inference import EngineConfig, GenerateRequest, LLMEngine, SamplingConfig
-from runtime import GemmaRuntime, get_device
+from runtime import Lfm3Runtime, get_device
 
 
 async def run(args):
-    runtime = GemmaRuntime(use_instruct_model=args.instruct, device=get_device())
+    runtime = Lfm3Runtime(
+        use_instruct_model=args.instruct,
+        device=get_device(),
+        quantization=args.quantization,
+    )
     engine = LLMEngine(
         runtime,
         EngineConfig(
@@ -91,7 +95,8 @@ async def run(args):
         await engine.shutdown()
     result = dict(
         kind="real_model_closed_loop",
-        model=runtime.repo_id,
+        model=runtime.model_id,
+        quantization=runtime.quantization,
         torch=torch.__version__,
         python=platform.python_version(),
         platform=platform.platform(),
@@ -118,6 +123,9 @@ def main():
     parser.add_argument("--tokens", type=int, default=16)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--concurrency", type=int, nargs="+", default=[1, 2, 4, 8])
+    parser.add_argument(
+        "--quantization", choices=("none", "int8", "int4"), default="none"
+    )
     args = parser.parse_args()
     if min(args.tokens, args.repeats, *args.concurrency) <= 0:
         parser.error("tokens, repeats and concurrency must be positive")

@@ -7,11 +7,11 @@ from typing import AsyncIterator, List, Optional, Tuple
 
 from config.settings import RuntimeSettings
 from inference import EngineConfig, GenerateRequest, LLMEngine, SamplingConfig
-from runtime import GemmaRuntime, resolve_device
+from runtime import DEFAULT_MODEL_ID, Lfm3Runtime, resolve_device
 
 from .errors import AppError
 from .metrics import ServiceMetrics
-from .prompting import messages_to_gemma_prompt
+from .prompting import messages_to_lfm3_prompt
 from .types import (
     ChatCompletionEvent,
     ChatCompletionRequest,
@@ -20,7 +20,7 @@ from .types import (
 )
 
 LOGGER = logging.getLogger("app")
-SUPPORTED_MODEL = "gemma-3-270m-it"
+SUPPORTED_MODEL = DEFAULT_MODEL_ID
 
 
 def _now_unix() -> int:
@@ -69,15 +69,16 @@ class ChatCompletionService:
             top_k=int(_config_value(config, "top_k", 50)),
             repetition_penalty=float(_config_value(config, "repetition_penalty", 1.1)),
         )
-        self.runtime = runtime or GemmaRuntime(
-            choose_model=str(_config_value(config, "model_size", "270m")),
+        self.runtime = runtime or Lfm3Runtime(
+            model_id=str(_config_value(config, "model_id", DEFAULT_MODEL_ID)),
+            quantization=str(_config_value(config, "quantization", "none")),
+            compile_model=bool(_config_value(config, "compile_model", False)),
             use_instruct_model=bool(_config_value(config, "use_instruct_model", True)),
             device=resolve_device(str(_config_value(config, "device", "auto"))),
         )
         self.engine = engine or LLMEngine(
             runtime=self.runtime,
             config=EngineConfig(
-                choose_model=str(_config_value(config, "model_size", "270m")),
                 use_instruct_model=False,
                 max_new_tokens=self.default_max_tokens,
                 sampling=self.default_sampling,
@@ -184,34 +185,34 @@ class ChatCompletionService:
         snapshot = self.metrics.snapshot()
         model = snapshot["model"]
         lines = [
-            "# HELP gemma_requests_total Total chat completion requests.",
-            "# TYPE gemma_requests_total counter",
-            f'gemma_requests_total{{model="{model}"}} {snapshot["requests_total"]}',
-            f'gemma_requests_failed_total{{model="{model}"}} {snapshot["requests_failed"]}',
-            f'gemma_prompt_tokens_total{{model="{model}"}} {snapshot["tokens_prompt_total"]}',
-            f'gemma_completion_tokens_total{{model="{model}"}} {snapshot["tokens_completion_total"]}',
-            f'gemma_generation_last_latency_seconds{{model="{model}"}} {snapshot["latency_s"]["last"]}',
+            "# HELP lfm3_requests_total Total chat completion requests.",
+            "# TYPE lfm3_requests_total counter",
+            f'lfm3_requests_total{{model="{model}"}} {snapshot["requests_total"]}',
+            f'lfm3_requests_failed_total{{model="{model}"}} {snapshot["requests_failed"]}',
+            f'lfm3_prompt_tokens_total{{model="{model}"}} {snapshot["tokens_prompt_total"]}',
+            f'lfm3_completion_tokens_total{{model="{model}"}} {snapshot["tokens_completion_total"]}',
+            f'lfm3_generation_last_latency_seconds{{model="{model}"}} {snapshot["latency_s"]["last"]}',
         ]
         if hasattr(self.engine, "stats"):
             engine_stats = self.engine.stats()
             lines.extend(
                 [
-                    f'gemma_kv_blocks_total{{model="{model}"}} {engine_stats.kv_blocks_total}',
-                    f'gemma_kv_blocks_used{{model="{model}"}} {engine_stats.kv_blocks_used}',
-                    f'gemma_scheduler_queue_size{{model="{model}"}} {engine_stats.queued_requests}',
-                    f'gemma_scheduler_active_requests{{model="{model}"}} {engine_stats.active_requests}',
-                    f'gemma_scheduler_prefill_batch_size{{model="{model}"}} {engine_stats.prefill_batch_size}',
-                    f'gemma_scheduler_decode_batch_size{{model="{model}"}} {engine_stats.decode_batch_size}',
-                    f'gemma_scheduler_queue_wait_ms{{model="{model}"}} {engine_stats.queue_wait_ms}',
-                    f'gemma_scheduler_prefill_latency_ms{{model="{model}"}} {engine_stats.prefill_latency_ms}',
-                    f'gemma_scheduler_decode_step_latency_ms{{model="{model}"}} {engine_stats.decode_step_latency_ms}',
-                    f'gemma_scheduler_completed_requests{{model="{model}"}} {engine_stats.completed_requests}',
-                    f'gemma_scheduler_cancelled_requests{{model="{model}"}} {engine_stats.cancelled_requests}',
-                    f'gemma_scheduler_failed_requests{{model="{model}"}} {engine_stats.failed_requests}',
-                    f'gemma_prefix_cache_enabled{{model="{model}"}} {int(engine_stats.prefix_cache_enabled)}',
-                    f'gemma_prefix_cache_entries{{model="{model}"}} {engine_stats.prefix_cache_entries}',
-                    f'gemma_prefix_cache_hits{{model="{model}"}} {engine_stats.prefix_cache_hits}',
-                    f'gemma_prefix_cache_misses{{model="{model}"}} {engine_stats.prefix_cache_misses}',
+                    f'lfm3_kv_blocks_total{{model="{model}"}} {engine_stats.kv_blocks_total}',
+                    f'lfm3_kv_blocks_used{{model="{model}"}} {engine_stats.kv_blocks_used}',
+                    f'lfm3_scheduler_queue_size{{model="{model}"}} {engine_stats.queued_requests}',
+                    f'lfm3_scheduler_active_requests{{model="{model}"}} {engine_stats.active_requests}',
+                    f'lfm3_scheduler_prefill_batch_size{{model="{model}"}} {engine_stats.prefill_batch_size}',
+                    f'lfm3_scheduler_decode_batch_size{{model="{model}"}} {engine_stats.decode_batch_size}',
+                    f'lfm3_scheduler_queue_wait_ms{{model="{model}"}} {engine_stats.queue_wait_ms}',
+                    f'lfm3_scheduler_prefill_latency_ms{{model="{model}"}} {engine_stats.prefill_latency_ms}',
+                    f'lfm3_scheduler_decode_step_latency_ms{{model="{model}"}} {engine_stats.decode_step_latency_ms}',
+                    f'lfm3_scheduler_completed_requests{{model="{model}"}} {engine_stats.completed_requests}',
+                    f'lfm3_scheduler_cancelled_requests{{model="{model}"}} {engine_stats.cancelled_requests}',
+                    f'lfm3_scheduler_failed_requests{{model="{model}"}} {engine_stats.failed_requests}',
+                    f'lfm3_prefix_cache_enabled{{model="{model}"}} {int(engine_stats.prefix_cache_enabled)}',
+                    f'lfm3_prefix_cache_entries{{model="{model}"}} {engine_stats.prefix_cache_entries}',
+                    f'lfm3_prefix_cache_hits{{model="{model}"}} {engine_stats.prefix_cache_hits}',
+                    f'lfm3_prefix_cache_misses{{model="{model}"}} {engine_stats.prefix_cache_misses}',
                 ]
             )
         lines.append("")
@@ -252,7 +253,7 @@ class ChatCompletionService:
 
     async def create(self, request: ChatCompletionRequest) -> ChatCompletionResult:
         self._validate_request(request)
-        prompt = messages_to_gemma_prompt(request.messages)
+        prompt = messages_to_lfm3_prompt(request.messages)
         result = await self.engine.generate(
             GenerateRequest(
                 request_id=_completion_id(),
@@ -288,7 +289,7 @@ class ChatCompletionService:
         completion_id = _completion_id()
         created = _now_unix()
         started = time.perf_counter()
-        prompt = messages_to_gemma_prompt(request.messages)
+        prompt = messages_to_lfm3_prompt(request.messages)
 
         completion_tokens = 0
         accumulated_text = ""

@@ -18,7 +18,7 @@ def test_http_benchmark_uses_usage_rather_than_chunk_count():
         + "data: [DONE]\n\n"
     )
     args = SimpleNamespace(
-        url="http://localhost:8000", model="gemma-3-270m-it", tokens=5
+        url="http://localhost:8000", model="LiquidAI/LFM3-1.7B", tokens=5
     )
     with patch("urllib.request.urlopen", return_value=io.BytesIO(body.encode())):
         result = request_one(args, 0)
@@ -29,7 +29,7 @@ def test_http_benchmark_uses_usage_rather_than_chunk_count():
 
 def test_http_benchmark_rejects_missing_usage():
     args = SimpleNamespace(
-        url="http://localhost:8000", model="gemma-3-270m-it", tokens=5
+        url="http://localhost:8000", model="LiquidAI/LFM3-1.7B", tokens=5
     )
     with patch("urllib.request.urlopen", return_value=io.BytesIO(b"data: [DONE]\n\n")):
         with pytest.raises(RuntimeError, match="usage"):

@@ -9,7 +9,7 @@ from typing import List, Optional
 
 import torch
 
-from gemma3.tokenizer import apply_chat_template
+from lfm3.tokenizer import apply_chat_template
 
 from .config import EngineConfig, SamplingConfig
 from .kv import KVBlockManager
@@ -17,10 +17,32 @@ from .sampling import apply_repetition_penalty_, sample_next_token
 from .types import GenerateResult, RequestState
 
 
+def _next_power_of_two(value: int) -> int:
+    """Round a positive tensor dimension up to a stable graph-size bucket."""
+    value = max(1, int(value))
+    return 1 << (value - 1).bit_length()
+
+
 class PagedModelExecutor:
     def __init__(self, runtime: object, config: EngineConfig) -> None:
         self.runtime = runtime
         self.config = config
+        self.use_cuda_graph_buckets = bool(getattr(runtime, "compile_model", False))
+        self.graph_batch_capacity = (
+            _next_power_of_two(min(config.decode_batch_size, config.max_batch_tokens))
+            if self.use_cuda_graph_buckets
+            else 0
+        )
+
+        self.supports_prefix_cache = bool(
+            getattr(runtime.model, "supports_prefix_cache", True)
+        )
+        if config.enable_prefix_cache and not self.supports_prefix_cache:
+            raise ValueError(
+                "prefix caching is not supported by this model because conv "
+                "layers keep recurrent state outside the paged KV cache"
+            )
+
         self.capacity = KVBlockManager(
             max_kv_cache_tokens=config.max_kv_cache_tokens,
             block_size=config.kv_block_size,
@@ -29,12 +51,63 @@ class PagedModelExecutor:
             max_prefix_cache_entries=config.max_prefix_cache_entries,
         )
         self.paged_kv_caches = runtime.model.init_paged_kv_caches(
-            num_blocks=self.capacity.num_blocks,
+            num_blocks=self.capacity.num_blocks + self.graph_batch_capacity,
             block_size=self.capacity.block_size,
             device=runtime.device,
         )
+
+        self.conv_state_caches = None
+        self._conv_slots: dict[object, int] = {}
+        self._free_conv_slots: list[int] = []
+        if hasattr(runtime.model, "init_conv_state_caches"):
+            self.conv_state_caches = runtime.model.init_conv_state_caches(
+                max_slots=config.max_concurrent_requests + self.graph_batch_capacity,
+                device=runtime.device,
+                dtype=getattr(runtime, "dtype", None),
+            )
+            self._free_conv_slots = list(range(config.max_concurrent_requests))
+
+        if getattr(runtime, "compile_model", False):
+            self._mark_cache_addresses_static()
+
         self.prefix_cache_hits = 0
         self.prefix_cache_misses = 0
+
+    def _mark_cache_addresses_static(self) -> None:
+        """Keep mutable cache buffers at stable addresses for CUDA graph replay."""
+        mark_static_address = getattr(torch._dynamo, "mark_static_address", None)
+        if mark_static_address is None:
+            raise RuntimeError(
+                "compiled serving requires torch._dynamo.mark_static_address"
+            )
+
+        for cache in self.paged_kv_caches:
+            if cache is not None:
+                mark_static_address(cache.k_blocks)
+                mark_static_address(cache.v_blocks)
+        if self.conv_state_caches is not None:
+            for state in self.conv_state_caches:
+                mark_static_address(state)
+
+    def _acquire_conv_slot(self, request: RequestState) -> None:
+        if self.conv_state_caches is None:
+            return
+        request_id = request.request_id
+        if request_id in self._conv_slots:
+            return
+        if not self._free_conv_slots:
+            raise RuntimeError("conv state slot pool exhausted")
+        slot = self._free_conv_slots.pop()
+        self._conv_slots[request_id] = slot
+        for cache in self.conv_state_caches:
+            cache[slot].zero_()
+
+    def _release_conv_slot(self, request: RequestState) -> None:
+        if self.conv_state_caches is None:
+            return
+        slot = self._conv_slots.pop(request.request_id, None)
+        if slot is not None:
+            self._free_conv_slots.append(slot)
 
     def build_request(
         self,
@@ -97,6 +170,7 @@ class PagedModelExecutor:
         request.sampling_generator = self._sampling_generator(
             getattr(request.sampling, "seed", None)
         )
+        self._acquire_conv_slot(request)
         request.prefill_time_s = request.decode_time_s = 0.0
         request.prefill_steps = request.decode_steps = 0
         request.current_input = self._next_prefill_chunk(request)
@@ -108,6 +182,7 @@ class PagedModelExecutor:
         request.stop_reason, request.error_message = reason, error_message
         request.finished_at_s = time.perf_counter()
         self.capacity.release(request)
+        self._release_conv_slot(request)
 
     def result(self, request: RequestState) -> GenerateResult:
         first = request.first_scheduled_at_s or request.created_at_s
@@ -161,7 +236,11 @@ class PagedModelExecutor:
         started = time.perf_counter()
         if not self._eligible([request]):
             return False
-        logits = self._forward([request], compute_logits=finishes_prompt)
+        logits = self._forward(
+            [request],
+            compute_logits=finishes_prompt,
+            use_compiled=self.use_cuda_graph_buckets,
+        )
         if request.status in ("finished", "error"):
             return False
         request.prefill_time_s += time.perf_counter() - started
@@ -181,7 +260,9 @@ class PagedModelExecutor:
         if not eligible:
             return []
         started = time.perf_counter()
-        logits = self._forward(eligible)
+        logits = self._forward(
+            eligible, use_compiled=self.use_cuda_graph_buckets, pad_decode_batch=True
+        )
         tokens = self._sample(logits, eligible)
         token_ids = tokens.flatten().tolist()  # One device-to-host transfer per batch.
         elapsed = time.perf_counter() - started
@@ -243,20 +324,81 @@ class PagedModelExecutor:
         return eligible
 
     def _forward(
-        self, eligible: List[RequestState], *, compute_logits: bool = True
+        self,
+        eligible: List[RequestState],
+        *,
+        compute_logits: bool = True,
+        use_compiled: bool = False,
+        pad_decode_batch: bool = False,
     ) -> torch.Tensor:
         inputs = torch.cat([request.current_input for request in eligible], dim=0)
+        active_batch_size = len(eligible)
+        padded_batch_size = active_batch_size
+        if pad_decode_batch and self.use_cuda_graph_buckets:
+            padded_batch_size = min(
+                self.graph_batch_capacity, _next_power_of_two(active_batch_size)
+            )
+            if padded_batch_size > active_batch_size:
+                padding = inputs.new_zeros(
+                    padded_batch_size - active_batch_size, inputs.shape[1]
+                )
+                inputs = torch.cat((inputs, padding), dim=0)
+
+        max_seq_len = max(r.live_kv_tokens for r in eligible) + inputs.shape[1]
         width = max(len(request.block_table) for request in eligible)
-        tables = torch.tensor(
-            [r.block_table + [-1] * (width - len(r.block_table)) for r in eligible],
-            dtype=torch.long,
-            device=self.runtime.device,
-        )
+        if use_compiled:
+            # Keep attention's dense gather and block-table shapes stable across
+            # decode positions. Masking still uses each request's true KV length.
+            max_seq_len = _next_power_of_two(max_seq_len)
+            blocks_for_attention = (
+                max_seq_len + self.capacity.block_size - 1
+            ) // self.capacity.block_size
+            width = _next_power_of_two(max(width, blocks_for_attention))
+        table_rows = [
+            r.block_table + [-1] * (width - len(r.block_table)) for r in eligible
+        ]
+        for lane in range(active_batch_size, padded_batch_size):
+            scratch_block = self.capacity.num_blocks + lane - active_batch_size
+            table_rows.append([scratch_block] + [-1] * (width - 1))
+        tables = torch.tensor(table_rows, dtype=torch.long, device=self.runtime.device)
         lengths = torch.tensor(
             [request.live_kv_tokens for request in eligible],
             dtype=torch.long,
             device=self.runtime.device,
         )
+        if padded_batch_size > active_batch_size:
+            padding = torch.zeros(
+                padded_batch_size - active_batch_size,
+                dtype=lengths.dtype,
+                device=lengths.device,
+            )
+            lengths = torch.cat((lengths, padding))
+        conv_kwargs = {}
+        if self.conv_state_caches is not None:
+            try:
+                slots = [self._conv_slots[request.request_id] for request in eligible]
+            except KeyError as exc:
+                raise RuntimeError(
+                    "missing conv state slot for active request"
+                ) from exc
+            for lane in range(active_batch_size, padded_batch_size):
+                slots.append(
+                    self.config.max_concurrent_requests + lane - active_batch_size
+                )
+            conv_kwargs = {
+                "conv_state_caches": self.conv_state_caches,
+                "conv_slots": torch.tensor(
+                    slots, dtype=torch.long, device=self.runtime.device
+                ),
+            }
+        if use_compiled:
+            # RoPE buffers outlive a forward. Grow them eagerly so they never
+            # retain graph-pool outputs overwritten at the next step boundary.
+            for name in ("rope_sliding", "rope_full"):
+                rope = getattr(self.runtime.model, name, None)
+                if rope is not None:
+                    rope.ensure_capacity(max_seq_len, device=self.runtime.device)
+            torch.compiler.cudagraph_mark_step_begin()
         with torch.inference_mode():
             logits = self.runtime.model(
                 inputs,
@@ -265,8 +407,11 @@ class PagedModelExecutor:
                 paged_kv_caches=self.paged_kv_caches,
                 compute_logits=compute_logits,
                 logits_last_only=True,
-                max_seq_len=max(r.live_kv_tokens for r in eligible) + inputs.shape[1],
+                max_seq_len=max_seq_len,
+                **conv_kwargs,
             )
+        if padded_batch_size > active_batch_size:
+            logits = logits[:active_batch_size]
         for request in eligible:
             request.live_kv_tokens += int(request.current_input.shape[1])
         return logits

@@ -11,16 +11,15 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from inference import EngineConfig, GenerateRequest, LLMEngine, SamplingConfig
-from runtime import GemmaRuntime, get_device
+from runtime import Lfm3Runtime, get_device
 
 
 def build_engine(
-    runtime: GemmaRuntime, *, prefill_chunk_size: Optional[int], max_new_tokens: int
+    runtime: Lfm3Runtime, *, prefill_chunk_size: Optional[int], max_new_tokens: int
 ) -> LLMEngine:
     return LLMEngine(
         runtime=runtime,
         config=EngineConfig(
-            choose_model="270m",
             use_instruct_model=False,
             max_new_tokens=max_new_tokens,
             prefill_chunk_size=prefill_chunk_size,
@@ -94,7 +93,7 @@ def summarize_results(results, *, elapsed_s: float, label: str) -> None:
 
 
 async def run_case(
-    runtime: GemmaRuntime,
+    runtime: Lfm3Runtime,
     *,
     prompts: list[str],
     prefill_chunk_size: Optional[int],
@@ -170,15 +169,18 @@ async def main() -> None:
     parser.add_argument(
         "--benchmark-runs", type=int, default=3, help="Number of timed runs per case"
     )
+    parser.add_argument(
+        "--quantization", choices=("none", "int8", "int4"), default="none"
+    )
     args = parser.parse_args()
 
     prompts = make_prompts(
         num_prompts=max(1, args.num_prompts), repeat=max(1, args.repeat)
     )
-    runtime = GemmaRuntime(
-        choose_model="270m",
+    runtime = Lfm3Runtime(
         use_instruct_model=True,
         device=get_device(),
+        quantization=args.quantization,
     )
 
     print(f"num_prompts={len(prompts)}")

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Mapping, Optional, Sequence, TypeVar
 
 
-ENV_PREFIX = "GEMMA_API_"
+ENV_PREFIX = "LFM3_API_"
 
 
 @dataclass(frozen=True)
@@ -17,7 +17,9 @@ class ServerSettings:
 
 @dataclass(frozen=True)
 class RuntimeSettings:
-    model_size: str = "270m"
+    model_id: str = "LiquidAI/LFM3-1.7B"
+    quantization: str = "none"
+    compile_model: bool = False
     use_instruct_model: bool = True
     device: str = "auto"
     default_max_tokens: int = 128
@@ -108,13 +110,20 @@ def _add_bool_override(parser: argparse.ArgumentParser, name: str) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the Gemma OpenAI-like API server.")
+    parser = argparse.ArgumentParser(description="Run the LFM3 OpenAI-like API server.")
     parser.add_argument("--host", default=argparse.SUPPRESS)
     parser.add_argument("--port", type=int, default=argparse.SUPPRESS)
     _add_bool_override(parser, "reload")
     parser.add_argument("--log-level", default=argparse.SUPPRESS)
 
-    parser.add_argument("--model-size", default=argparse.SUPPRESS)
+    parser.add_argument("--model-id", default=argparse.SUPPRESS)
+    parser.add_argument(
+        "--quantization",
+        choices=("none", "int8", "int4"),
+        default=argparse.SUPPRESS,
+        help="Weight-only quantization; int8 is recommended, int4 is experimental",
+    )
+    _add_bool_override(parser, "compile_model")
     _add_bool_override(parser, "use_instruct_model")
     parser.add_argument("--device", default=argparse.SUPPRESS)
     parser.add_argument("--default-max-tokens", type=int, default=argparse.SUPPRESS)
@@ -154,7 +163,13 @@ def load_settings_from_env(env: Mapping[str, str] = os.environ) -> Settings:
             log_level=_from_env(env, "log_level", str, server_defaults.log_level),
         ),
         runtime=RuntimeSettings(
-            model_size=_from_env(env, "model_size", str, runtime_defaults.model_size),
+            model_id=_from_env(env, "model_id", str, runtime_defaults.model_id),
+            quantization=_from_env(
+                env, "quantization", str, runtime_defaults.quantization
+            ),
+            compile_model=_from_env(
+                env, "compile_model", _parse_bool, runtime_defaults.compile_model
+            ),
             use_instruct_model=_from_env(
                 env,
                 "use_instruct_model",
@@ -268,7 +283,11 @@ def parse_settings(
         log_level=_override(args, "log_level", settings.server.log_level),
     )
     runtime = RuntimeSettings(
-        model_size=_override(args, "model_size", settings.runtime.model_size),
+        model_id=_override(args, "model_id", settings.runtime.model_id),
+        quantization=_override(args, "quantization", settings.runtime.quantization),
+        compile_model=_override(
+            args, "compile_model", settings.runtime.compile_model
+        ),
         use_instruct_model=_override(
             args,
             "use_instruct_model",

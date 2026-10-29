@@ -9,7 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from inference import EngineConfig, LLMEngine, SamplingConfig
-from runtime import GemmaRuntime, get_device
+from runtime import Lfm3Runtime, get_device
 
 
 def should_run_real_engine_tests() -> bool:
@@ -24,7 +24,7 @@ def should_run_real_engine_load_tests() -> bool:
 
 
 def has_local_model_assets() -> bool:
-    model_dir = PROJECT_ROOT / "gemma-3-270m-it"
+    model_dir = PROJECT_ROOT / "LFM3-1.7B"
     weights_path = model_dir / "model.safetensors"
     tokenizer_path = model_dir / "tokenizer.json"
     return model_dir.exists() and weights_path.exists() and tokenizer_path.exists()
@@ -44,7 +44,7 @@ def real_engine_skip_reason(load_test: bool = False) -> str:
             "(set RUN_REAL_ENGINE_TESTS=1 RUN_REAL_ENGINE_LOAD_TESTS=1)"
         )
     if not has_local_model_assets():
-        return "missing local model files in gemma-3-270m-it/"
+        return "missing local model files in LFM3-1.7B/"
     missing = missing_runtime_dependencies()
     if missing:
         return f"missing runtime dependencies: {', '.join(missing)}"
@@ -52,9 +52,8 @@ def real_engine_skip_reason(load_test: bool = False) -> str:
 
 
 @lru_cache(maxsize=1)
-def get_shared_runtime() -> GemmaRuntime:
-    return GemmaRuntime(
-        choose_model="270m",
+def get_shared_runtime() -> Lfm3Runtime:
+    return Lfm3Runtime(
         use_instruct_model=True,
         device=get_device(),
     )
@@ -69,7 +68,6 @@ def build_engine(
     return LLMEngine(
         runtime=runtime,
         config=EngineConfig(
-            choose_model="270m",
             use_instruct_model=False,
             max_new_tokens=max_new_tokens,
             decode_batch_size=decode_batch_size,

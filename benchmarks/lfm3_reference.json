@@ -1,0 +1,203 @@
+{
+  "kind": "reference_validation",
+  "model_dir": "LFM3-1.7B",
+  "model_id": "LiquidAI/LFM3-1.7B",
+  "torch": "2.14.0+cu130",
+  "dtype": "bfloat16",
+  "device": "cuda",
+  "block_size": 16,
+  "max_new_tokens": 8,
+  "reference": "Transformers remote-code LFM3, full context recomputed each step",
+  "rows": [
+    {
+      "prompt_tokens": 24,
+      "max_abs_logit_error": 0.375,
+      "native_token_ids": [
+        26,
+        19,
+        26,
+        29821,
+        229,
+        28,
+        22,
+        124900
+      ],
+      "reference_token_ids": [
+        26,
+        19,
+        26,
+        29821,
+        229,
+        28,
+        22,
+        124900
+      ],
+      "greedy_match": true,
+      "steps": [
+        {
+          "step": 0,
+          "max_abs_logit_error": 0.375,
+          "native_token_id": 26,
+          "reference_token_id": 26,
+          "native_top2_gap": 1.5,
+          "reference_top2_gap": 1.5
+        },
+        {
+          "step": 1,
+          "max_abs_logit_error": 0.3125,
+          "native_token_id": 19,
+          "reference_token_id": 19,
+          "native_top2_gap": 1.875,
+          "reference_top2_gap": 1.875
+        },
+        {
+          "step": 2,
+          "max_abs_logit_error": 0.234375,
+          "native_token_id": 26,
+          "reference_token_id": 26,
+          "native_top2_gap": 12.625,
+          "reference_top2_gap": 12.625
+        },
+        {
+          "step": 3,
+          "max_abs_logit_error": 0.25,
+          "native_token_id": 29821,
+          "reference_token_id": 29821,
+          "native_top2_gap": 1.0,
+          "reference_top2_gap": 0.875
+        },
+        {
+          "step": 4,
+          "max_abs_logit_error": 0.203125,
+          "native_token_id": 229,
+          "reference_token_id": 229,
+          "native_top2_gap": 6.75,
+          "reference_top2_gap": 6.75
+        },
+        {
+          "step": 5,
+          "max_abs_logit_error": 0.1875,
+          "native_token_id": 28,
+          "reference_token_id": 28,
+          "native_top2_gap": 13.375,
+          "reference_top2_gap": 13.25
+        },
+        {
+          "step": 6,
+          "max_abs_logit_error": 0.34375,
+          "native_token_id": 22,
+          "reference_token_id": 22,
+          "native_top2_gap": 8.5,
+          "reference_top2_gap": 8.75
+        },
+        {
+          "step": 7,
+          "max_abs_logit_error": 0.375,
+          "native_token_id": 124900,
+          "reference_token_id": 124900,
+          "native_top2_gap": 5.0,
+          "reference_top2_gap": 4.5
+        }
+      ],
+      "native_text": "2+2 equals 4.<|im_end|>",
+      "reference_text": "2+2 equals 4.<|im_end|>",
+      "label": "chat",
+      "prompt": "<|startoftext|><|im_start|>user\nWhat is 2+2? Answer in one short sentence.<|im_end|>\n<|im_start|>assistant\n<think></think>"
+    },
+    {
+      "prompt_tokens": 8,
+      "max_abs_logit_error": 0.2578125,
+      "native_token_ids": [
+        310,
+        4434,
+        278,
+        2868,
+        309,
+        2035,
+        302,
+        278
+      ],
+      "reference_token_ids": [
+        310,
+        6833,
+        278,
+        2868,
+        309,
+        2035,
+        302,
+        278
+      ],
+      "greedy_match": false,
+      "steps": [
+        {
+          "step": 0,
+          "max_abs_logit_error": 0.125,
+          "native_token_id": 310,
+          "reference_token_id": 310,
+          "native_top2_gap": 3.625,
+          "reference_top2_gap": 3.625
+        },
+        {
+          "step": 1,
+          "max_abs_logit_error": 0.125,
+          "native_token_id": 4434,
+          "reference_token_id": 6833,
+          "native_top2_gap": 0.0,
+          "reference_top2_gap": 0.125
+        },
+        {
+          "step": 2,
+          "max_abs_logit_error": 0.15625,
+          "native_token_id": 278,
+          "reference_token_id": 278,
+          "native_top2_gap": 1.125,
+          "reference_top2_gap": 1.125
+        },
+        {
+          "step": 3,
+          "max_abs_logit_error": 0.125,
+          "native_token_id": 2868,
+          "reference_token_id": 2868,
+          "native_top2_gap": 0.375,
+          "reference_top2_gap": 0.375
+        },
+        {
+          "step": 4,
+          "max_abs_logit_error": 0.1875,
+          "native_token_id": 309,
+          "reference_token_id": 309,
+          "native_top2_gap": 0.125,
+          "reference_top2_gap": 0.125
+        },
+        {
+          "step": 5,
+          "max_abs_logit_error": 0.2578125,
+          "native_token_id": 2035,
+          "reference_token_id": 2035,
+          "native_top2_gap": 2.625,
+          "reference_top2_gap": 2.5
+        },
+        {
+          "step": 6,
+          "max_abs_logit_error": 0.1875,
+          "native_token_id": 302,
+          "reference_token_id": 302,
+          "native_top2_gap": 0.0,
+          "reference_top2_gap": 0.0
+        },
+        {
+          "step": 7,
+          "max_abs_logit_error": 0.1875,
+          "native_token_id": 278,
+          "reference_token_id": 278,
+          "native_top2_gap": 1.375,
+          "reference_top2_gap": 1.375
+        }
+      ],
+      "native_text": " to avoid the key and value of the",
+      "reference_text": " to store the key and value of the",
+      "label": "raw",
+      "prompt": "The purpose of a KV cache is"
+    }
+  ]
+}

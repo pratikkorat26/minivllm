@@ -15,31 +15,33 @@ class RuntimeConfigTests(unittest.TestCase):
         settings = parse_settings(
             argv=[],
             env={
-                "GEMMA_API_HOST": "0.0.0.0",
-                "GEMMA_API_PORT": "9000",
-                "GEMMA_API_RELOAD": "yes",
-                "GEMMA_API_LOG_LEVEL": "debug",
-                "GEMMA_API_MODEL_SIZE": "270m",
-                "GEMMA_API_USE_INSTRUCT_MODEL": "false",
-                "GEMMA_API_DEVICE": "cpu",
-                "GEMMA_API_DEFAULT_MAX_TOKENS": "64",
-                "GEMMA_API_MAX_REQUEST_TOKENS": "512",
-                "GEMMA_API_TEMPERATURE": "0.5",
-                "GEMMA_API_TOP_P": "0.75",
-                "GEMMA_API_TOP_K": "20",
-                "GEMMA_API_REPETITION_PENALTY": "1.2",
-                "GEMMA_API_DECODE_SELECTION_WINDOW": "6",
-                "GEMMA_API_MAX_QUEUE_SIZE": "7",
-                "GEMMA_API_MAX_CONCURRENT_REQUESTS": "3",
-                "GEMMA_API_MAX_BATCH_TOKENS": "96",
-                "GEMMA_API_DECODE_BATCH_SIZE": "2",
-                "GEMMA_API_REQUEST_TIMEOUT_S": "12.5",
-                "GEMMA_API_MAX_KV_CACHE_TOKENS": "1024",
-                "GEMMA_API_KV_BLOCK_SIZE": "32",
-                "GEMMA_API_NUM_KV_BLOCKS": "8",
-                "GEMMA_API_PREFILL_CHUNK_SIZE": "128",
-                "GEMMA_API_ENABLE_PREFIX_CACHE": "true",
-                "GEMMA_API_MAX_PREFIX_CACHE_ENTRIES": "32",
+                "LFM3_API_HOST": "0.0.0.0",
+                "LFM3_API_PORT": "9000",
+                "LFM3_API_RELOAD": "yes",
+                "LFM3_API_LOG_LEVEL": "debug",
+                "LFM3_API_MODEL_ID": "LiquidAI/LFM3-1.7B",
+                "LFM3_API_QUANTIZATION": "int8",
+                "LFM3_API_COMPILE_MODEL": "true",
+                "LFM3_API_USE_INSTRUCT_MODEL": "false",
+                "LFM3_API_DEVICE": "cpu",
+                "LFM3_API_DEFAULT_MAX_TOKENS": "64",
+                "LFM3_API_MAX_REQUEST_TOKENS": "512",
+                "LFM3_API_TEMPERATURE": "0.5",
+                "LFM3_API_TOP_P": "0.75",
+                "LFM3_API_TOP_K": "20",
+                "LFM3_API_REPETITION_PENALTY": "1.2",
+                "LFM3_API_DECODE_SELECTION_WINDOW": "6",
+                "LFM3_API_MAX_QUEUE_SIZE": "7",
+                "LFM3_API_MAX_CONCURRENT_REQUESTS": "3",
+                "LFM3_API_MAX_BATCH_TOKENS": "96",
+                "LFM3_API_DECODE_BATCH_SIZE": "2",
+                "LFM3_API_REQUEST_TIMEOUT_S": "12.5",
+                "LFM3_API_MAX_KV_CACHE_TOKENS": "1024",
+                "LFM3_API_KV_BLOCK_SIZE": "32",
+                "LFM3_API_NUM_KV_BLOCKS": "8",
+                "LFM3_API_PREFILL_CHUNK_SIZE": "128",
+                "LFM3_API_ENABLE_PREFIX_CACHE": "true",
+                "LFM3_API_MAX_PREFIX_CACHE_ENTRIES": "32",
             },
         )
 
@@ -47,7 +49,9 @@ class RuntimeConfigTests(unittest.TestCase):
         self.assertEqual(settings.server.port, 9000)
         self.assertTrue(settings.server.reload)
         self.assertEqual(settings.server.log_level, "debug")
-        self.assertEqual(settings.runtime.model_size, "270m")
+        self.assertEqual(settings.runtime.model_id, "LiquidAI/LFM3-1.7B")
+        self.assertEqual(settings.runtime.quantization, "int8")
+        self.assertTrue(settings.runtime.compile_model)
         self.assertFalse(settings.runtime.use_instruct_model)
         self.assertEqual(settings.runtime.device, "cpu")
         self.assertEqual(settings.runtime.default_max_tokens, 64)
@@ -79,6 +83,11 @@ class RuntimeConfigTests(unittest.TestCase):
                 "--no-reload",
                 "--log-level",
                 "warning",
+                "--model-id",
+                "LiquidAI/LFM3-1.7B",
+                "--quantization",
+                "int4",
+                "--compile-model",
                 "--no-use-instruct-model",
                 "--default-max-tokens",
                 "33",
@@ -95,16 +104,17 @@ class RuntimeConfigTests(unittest.TestCase):
                 "none",
             ],
             env={
-                "GEMMA_API_HOST": "0.0.0.0",
-                "GEMMA_API_PORT": "9000",
-                "GEMMA_API_RELOAD": "true",
-                "GEMMA_API_LOG_LEVEL": "debug",
-                "GEMMA_API_USE_INSTRUCT_MODEL": "true",
-                "GEMMA_API_DEFAULT_MAX_TOKENS": "64",
-                "GEMMA_API_TEMPERATURE": "0.5",
-                "GEMMA_API_DECODE_BATCH_SIZE": "8",
-                "GEMMA_API_REQUEST_TIMEOUT_S": "9.0",
-                "GEMMA_API_NUM_KV_BLOCKS": "8",
+                "LFM3_API_HOST": "0.0.0.0",
+                "LFM3_API_PORT": "9000",
+                "LFM3_API_RELOAD": "true",
+                "LFM3_API_LOG_LEVEL": "debug",
+                "LFM3_API_USE_INSTRUCT_MODEL": "true",
+                "LFM3_API_COMPILE_MODEL": "false",
+                "LFM3_API_DEFAULT_MAX_TOKENS": "64",
+                "LFM3_API_TEMPERATURE": "0.5",
+                "LFM3_API_DECODE_BATCH_SIZE": "8",
+                "LFM3_API_REQUEST_TIMEOUT_S": "9.0",
+                "LFM3_API_NUM_KV_BLOCKS": "8",
             },
         )
 
@@ -112,6 +122,9 @@ class RuntimeConfigTests(unittest.TestCase):
         self.assertEqual(settings.server.port, 7000)
         self.assertFalse(settings.server.reload)
         self.assertEqual(settings.server.log_level, "warning")
+        self.assertEqual(settings.runtime.model_id, "LiquidAI/LFM3-1.7B")
+        self.assertEqual(settings.runtime.quantization, "int4")
+        self.assertTrue(settings.runtime.compile_model)
         self.assertFalse(settings.runtime.use_instruct_model)
         self.assertEqual(settings.runtime.default_max_tokens, 33)
         self.assertEqual(settings.runtime.temperature, 0.2)
@@ -122,8 +135,8 @@ class RuntimeConfigTests(unittest.TestCase):
         self.assertIsNone(settings.runtime.num_kv_blocks)
 
     def test_invalid_env_bool_reports_variable_name(self):
-        with self.assertRaisesRegex(ValueError, "GEMMA_API_RELOAD"):
-            parse_settings(argv=[], env={"GEMMA_API_RELOAD": "sometimes"})
+        with self.assertRaisesRegex(ValueError, "LFM3_API_RELOAD"):
+            parse_settings(argv=[], env={"LFM3_API_RELOAD": "sometimes"})
 
     def test_run_main_passes_server_settings_to_runner(self):
         calls = []

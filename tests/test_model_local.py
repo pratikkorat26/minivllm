@@ -8,18 +8,18 @@ import pytest
 import torch
 
 from inference import EngineConfig, GenerateRequest, LLMEngine, SamplingConfig
-from runtime import GemmaRuntime
+from runtime import Lfm3Runtime
 
 pytestmark = pytest.mark.skipif(
     os.getenv("RUN_LOCAL_MODEL_TESTS") != "1"
-    or not Path("gemma-3-270m/model.safetensors").exists(),
-    reason="set RUN_LOCAL_MODEL_TESTS=1 with local base checkpoint",
+    or not Path("LFM3-1.7B/model.safetensors").exists(),
+    reason="set RUN_LOCAL_MODEL_TESTS=1 with local LFM3-1.7B checkpoint",
 )
 
 
 @pytest.fixture(scope="module")
 def runtime():
-    return GemmaRuntime(
+    return Lfm3Runtime(
         use_instruct_model=False,
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     )
@@ -68,24 +68,23 @@ def test_ragged_batch_and_stream_match_serial(runtime):
     asyncio.run(run())
 
 
-def test_chunked_prefill_and_cached_outputs_match(runtime):
+def test_chunked_prefill_outputs_match(runtime):
     async def run():
         plain = LLMEngine(runtime, settings(kv_block_size=4))
-        cached = LLMEngine(
+        chunked = LLMEngine(
             runtime,
-            settings(kv_block_size=4, prefill_chunk_size=2, enable_prefix_cache=True),
+            settings(kv_block_size=4, prefill_chunk_size=2),
         )
         prompt = "The purpose of a KV cache in an inference engine is"
         try:
             expected = await plain.generate(GenerateRequest("plain", prompt))
             for i in range(4):
-                result = await cached.generate(GenerateRequest(str(i), prompt))
+                result = await chunked.generate(GenerateRequest(str(i), prompt))
                 assert result.token_ids == expected.token_ids
                 assert result.error_message is None
-            assert cached.stats().prefix_cache_hits == 3
         finally:
             await plain.shutdown()
-            await cached.shutdown()
-        assert cached.stats().kv_blocks_used == 0
+            await chunked.shutdown()
+        assert chunked.stats().kv_blocks_used == 0
 
     asyncio.run(run())

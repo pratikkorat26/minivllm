@@ -10,16 +10,15 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from inference import EngineConfig, GenerateRequest, LLMEngine, SamplingConfig
-from runtime import GemmaRuntime, get_device
+from runtime import Lfm3Runtime, get_device
 
 
 def build_engine(
-    runtime: GemmaRuntime, *, prefill_chunk_size: Optional[int]
+    runtime: Lfm3Runtime, *, prefill_chunk_size: Optional[int]
 ) -> LLMEngine:
     return LLMEngine(
         runtime=runtime,
         config=EngineConfig(
-            choose_model="270m",
             use_instruct_model=False,
             max_new_tokens=32,
             prefill_chunk_size=prefill_chunk_size,
@@ -34,7 +33,7 @@ def build_engine(
 
 
 async def run_case(
-    runtime: GemmaRuntime, *, prompt: str, prefill_chunk_size: Optional[int]
+    runtime: Lfm3Runtime, *, prompt: str, prefill_chunk_size: Optional[int]
 ) -> dict:
     engine = build_engine(runtime, prefill_chunk_size=prefill_chunk_size)
     started = time.perf_counter()
@@ -62,7 +61,7 @@ async def run_case(
 
 
 async def benchmark_case(
-    runtime: GemmaRuntime,
+    runtime: Lfm3Runtime,
     *,
     prompt: str,
     prefill_chunk_size: Optional[int],
@@ -126,13 +125,16 @@ async def main() -> None:
         default="Explain KV cache reuse in one short paragraph. ",
         help="Seed prompt text to repeat",
     )
+    parser.add_argument(
+        "--quantization", choices=("none", "int8", "int4"), default="none"
+    )
     args = parser.parse_args()
 
     prompt = args.prompt * max(1, args.repeat)
-    runtime = GemmaRuntime(
-        choose_model="270m",
+    runtime = Lfm3Runtime(
         use_instruct_model=True,
         device=get_device(),
+        quantization=args.quantization,
     )
 
     print(f"prompt_chars={len(prompt)}")

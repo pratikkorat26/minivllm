@@ -6,7 +6,7 @@ from typing import Optional
 import torch
 
 from inference import EngineConfig, LLMEngine, SamplingConfig
-from gemma3.paged_kv import PagedKVCache
+from lfm3.paged_kv import PagedKVCache
 from inference import GenerateRequest
 from inference.scheduler import DecodeBatchSelector
 from inference.types import RequestState

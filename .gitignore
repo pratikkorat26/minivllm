@@ -1,5 +1,4 @@
-gemma-3-270m/
-gemma-3-270m-it/
+LFM3-1.7B/
 __pycache__/
 **/__pycache__/
 *.pyc

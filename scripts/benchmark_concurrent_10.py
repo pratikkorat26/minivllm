@@ -9,7 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from inference import EngineConfig, GenerateRequest, LLMEngine, SamplingConfig
-from runtime import GemmaRuntime, get_device
+from runtime import Lfm3Runtime, get_device
 
 try:
     import pandas as pd
@@ -20,15 +20,13 @@ except ModuleNotFoundError as exc:
 
 
 async def main() -> None:
-    runtime = GemmaRuntime(
-        choose_model="270m",
+    runtime = Lfm3Runtime(
         use_instruct_model=True,
         device=get_device(),
     )
     engine = LLMEngine(
         runtime=runtime,
         config=EngineConfig(
-            choose_model="270m",
             use_instruct_model=True,
             max_new_tokens=32,
             sampling=SamplingConfig(

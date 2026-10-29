@@ -64,7 +64,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Query local FastAPI OpenAI-like endpoint")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--model", default="gemma-3-270m-it")
+    parser.add_argument("--model", default="LiquidAI/LFM3-1.7B")
     parser.add_argument("--prompt", default="Give me one short line about LLM inference.")
     parser.add_argument("--max-tokens", type=int, default=64)
     parser.add_argument("--temperature", type=float, default=0.8)

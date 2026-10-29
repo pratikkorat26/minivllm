@@ -1,9 +1,9 @@
 import pytest
 import torch
 
-from gemma3.attention import GroupedQueryAttention
-from gemma3.paged_kv import PagedKVCache
-from gemma3.rope import RotaryEmbedding, apply_rope_single
+from lfm3.attention import GroupedQueryAttention
+from lfm3.paged_kv import PagedKVCache
+from lfm3.rope import RotaryEmbedding, apply_rope_single
 
 
 @pytest.mark.parametrize("groups", [1, 2])
@@ -41,7 +41,10 @@ def test_physical_page_layout(groups):
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
 @pytest.mark.parametrize("window", [None, 3])
 @pytest.mark.parametrize("groups", [1, 2])
-def test_ragged_decode_matches_independent_dense_attention(device, window, groups):
+@pytest.mark.parametrize("fused", [False, True])
+def test_ragged_decode_matches_independent_dense_attention(
+    device, window, groups, fused
+):
     if device == "cuda" and not torch.cuda.is_available():
         pytest.skip("CUDA unavailable")
     torch.manual_seed(12)
@@ -66,6 +69,7 @@ def test_ragged_decode_matches_independent_dense_attention(device, window, group
         device=device,
         dtype=torch.float32,
     )
+    attention.use_fused_paged_attention = fused
     tables = torch.tensor([[3, 1, 2, 0, 4], [9, 6, 8, 5, 7]], device=device)
     histories = [torch.randn(1, length, 16, device=device) for length in (4, 7)]
     with torch.inference_mode():
@@ -87,18 +91,28 @@ def test_ragged_decode_matches_independent_dense_attention(device, window, group
         expected = []
         for row, history in enumerate(histories):
             x = torch.cat([history, inputs[row : row + 1]], dim=1)
-            q = attention.q_proj(x[:, -1:]).view(1, 1, 4, 4).transpose(1, 2)
-            k = attention.k_proj(x).view(1, -1, groups, 4).transpose(1, 2)
-            v = attention.v_proj(x).view(1, -1, groups, 4).transpose(1, 2)
-            cos, sin = attention.rope.get_cos_sin(
-                x.shape[1], device=device, dtype=x.dtype
+            qw, kw, vw = attention.qkv_proj.weight.split(attention.qkv_sizes, dim=0)
+            q = attention.q_norm(
+                torch.nn.functional.linear(x[:, -1:], qw)
+                .view(1, 1, 4, 4)
+                .transpose(1, 2)
             )
-            q = apply_rope_single(q, cos[-1:], sin[-1:])
-            k = apply_rope_single(k, cos, sin).repeat_interleave(4 // groups, dim=1)
+            k = attention.k_norm(
+                torch.nn.functional.linear(x, kw).view(1, -1, groups, 4).transpose(1, 2)
+            )
+            v = torch.nn.functional.linear(x, vw).view(1, -1, groups, 4).transpose(1, 2)
+            cos, sin = attention.rope.get_cos_sin(
+                x.shape[1], device=device, dtype=torch.float32
+            )
+            q = apply_rope_single(q.float(), cos[-1:], sin[-1:]).to(x.dtype)
+            k = apply_rope_single(k.float(), cos, sin).to(x.dtype)
+            k = k.repeat_interleave(4 // groups, dim=1)
             v = v.repeat_interleave(4 // groups, dim=1)
             scores = (q @ k.transpose(-1, -2)) * attention.scale
             if window:
                 scores[..., :-window] = float("-inf")
             out = torch.softmax(scores, dim=-1) @ v
-            expected.append(attention.out_proj(out.transpose(1, 2).reshape(1, 1, 16)))
+            gate = torch.sigmoid(attention.gate_proj(x[:, -1:])).unsqueeze(-1)
+            out = (out.transpose(1, 2) * gate).reshape(1, 1, 16)
+            expected.append(attention.o_proj(out))
         torch.testing.assert_close(actual, torch.cat(expected), atol=2e-6, rtol=2e-5)
