@@ -41,6 +41,7 @@ class EngineConfig:
     kv_block_size: int = 16
     num_kv_blocks: Optional[int] = None
     prefill_chunk_size: Optional[int] = None
+    enable_prefill_batching: bool = False
     enable_prefix_cache: bool = False
     max_prefix_cache_entries: int = 64
 

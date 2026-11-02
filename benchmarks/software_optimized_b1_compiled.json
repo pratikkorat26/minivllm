@@ -1,0 +1,51 @@
+{
+  "model": "LiquidAI/LFM3-1.7B",
+  "device": "NVIDIA GeForce RTX 4070 Laptop GPU",
+  "torch_version": "2.15.0+cu132",
+  "config": {
+    "concurrency": 1,
+    "decode_batch_size": 1,
+    "max_batch_tokens": 256,
+    "max_kv_cache_tokens": 16384,
+    "max_queue_size": null,
+    "max_new_tokens": 64,
+    "repeats": 5,
+    "temperature": 0,
+    "top_p": 1,
+    "top_k": 0,
+    "repetition_penalty": 1,
+    "prompt": null,
+    "quantization": "none",
+    "fused_paged_attention": false,
+    "compile": true
+  },
+  "warmup_s": 32.8603713159996,
+  "elapsed_s": 5.03537022699993,
+  "generated_tokens": 320,
+  "aggregate_tokens_per_s": 63.55044129310344,
+  "peak_allocated_gib": 3.577363967895508,
+  "waves": [
+    {
+      "elapsed_s": 1.0219726479999736,
+      "generated_tokens": 64
+    },
+    {
+      "elapsed_s": 1.016803557000003,
+      "generated_tokens": 64
+    },
+    {
+      "elapsed_s": 1.0049267939998572,
+      "generated_tokens": 64
+    },
+    {
+      "elapsed_s": 0.9998405589999493,
+      "generated_tokens": 64
+    },
+    {
+      "elapsed_s": 0.9917596690002028,
+      "generated_tokens": 64
+    }
+  ],
+  "token_hash": "f44d8f2c5fdfafdd94bfe7749c2d8a3198f90d0453d0f63afc932dddbbf95a30",
+  "sample_output": "The purpose of a KV cache is to **store and reuse key-value pairs from previous computations** during inference (especially in transformer-based models like LLMs) to avoid redundant calculations and speed up response generation.\n\nWhen generating text token by token, the model needs to compute attention over all previous tokens. Instead of recomput"
+}

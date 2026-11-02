@@ -6,6 +6,112 @@ The runtime currently supports `LiquidAI/LFM3-1.7B` only. The checked-in engine
 and attention JSON files predate the LFM3 migration and are retained in the
 **historical Gemma measurements** section below. They are not LFM3 results.
 
+### PyTorch software optimization pass (Linux, November 1, 2026)
+
+Real LFM3-1.7B BF16 weights, RTX 4070 Laptop 8 GB, PyTorch 2.15.0+cu132.
+All runs in this section disable the custom paged-attention kernel. The baseline
+is commit `83c1329` with the same benchmark workload and JSON reporting added.
+Loading and warmup are excluded; five measured waves generate 64 tokens per
+request. GPU clocks and power are not locked. These are engine measurements,
+not HTTP capacity or a quality evaluation.
+
+The retained changes are bounded sliding-window gathers, one batched upload for
+repetition-penalty indices, avoiding a logits copy when no penalty is applied,
+a compiled single-token convolution expressed as an FP32 dot product, and opt-in
+batching of equal-length prefill chunks. Matching chunks share sampling settings
+and completion phase; their prior KV lengths can differ. The shared token budget
+and one-chunk-per-request round limit remain enforced. Model execution stays on
+one worker. Compilation permits up to 32 specializations within each model call;
+the default limit of eight caused eager fallback in a batch-256 experiment.
+
+| Workload | Baseline output tokens/s | After | Notes |
+|---|---:|---:|---|
+| One request, eager | 53.11 | 52.63 | No demonstrated speedup |
+| One request, compiled | 60.00 | 63.55 | Initial paired pass; later instrumented runs vary |
+| 128 requests, eager, 256-token budget | 1,627.10 | 2,733.02 | Equal-length prefill batching enabled |
+| 128 requests, compiled, 256-token budget | 1,769.33 | 2,835.31 | Equal-length prefill batching enabled |
+| 128 requests, compiled, 2,048-token budget | 1,769.33 | 3,982.94 | Includes scheduler tuning and final compile policy |
+| 128 requests, eager, repetition penalty 1.1 | 1,535.18 | 1,606.93 | Penalty optimization alone; identical token hashes |
+| One 8,118-token prompt, eager | 23.91 | 25.61 | Includes prefill; 256-token chunks |
+
+Short prompts contain 18–19 tokens after the chat template. Initial paired
+measurements use a 256-token budget and KV capacity 16,384. The final sweep uses
+a 2,048-token budget and KV capacities recorded in each JSON. Larger budgets let
+more short prompts share a prefill forward, reducing repeated weight reads.
+
+Prefill batching is explicit because different BF16 GEMM shapes can change
+near-tied greedy tokens. Sliding gathers and convolution reductions can also
+change reduction order. FP32 mixed-layer ragged-prefill logits are checked against
+serial full-sequence logits; real BF16 prefill logits are checked within tolerance.
+No universal token-identity claim is made.
+
+#### Separate prefill and decode rates
+
+`--phase-timing` records CUDA events around worker phases without synchronizing
+each intermediate prefill chunk. Prefill counts **input tokens processed**;
+decode counts **output tokens produced after the first token**. The first output
+token is sampled during prefill. Phase times include sampling, transfers, and
+GPU launch gaps within that worker call, and exclude scheduler waits and the other
+phase. These are worker-phase rates, not isolated kernel rates. CUDA-event
+instrumentation adds some overhead; end-to-end output throughput includes both
+phases and scheduling. Batched rates are aggregate across all requests.
+
+| Workload | Prefill input tokens/s | Decode output tokens/s | End-to-end output tokens/s | Peak allocated GiB |
+|---|---:|---:|---:|---:|
+| One short prompt (19 tokens) | 860 | 61 | 60 | 3.58 |
+| 128 concurrent short prompts | 8,242 | 4,657 | 3,983 | 3.80 |
+| 256 concurrent short prompts | 8,808 | 6,161 | 5,004 | 4.27 |
+| 512 concurrent short prompts | 8,848 | 6,071 | 5,038 | 5.28 |
+| One long prompt (8,118 tokens) | 9,191 | 51 | 30 | 3.68 |
+
+Batch 512 added less than 1% end-to-end throughput over batch 256 while roughly
+doubling per-request generation time. Batch 256 is the recommended throughput
+setting from this sweep. Single-conversation decode is about 61 tokens/s for
+short context and 51 tokens/s at 8K context. The best observed aggregate decode
+rate was 6,161 tokens/s at batch 256. The long-prompt prefill rate was 9,191 input
+tokens/s with 2,048-token chunks. These are workload-specific measured rates,
+not a proven hardware maximum.
+
+
+Raw data: `software_baseline_*.json` and `software_optimized_*.json` record the
+initial paired passes; `software_phases_*_budget2048.json` record the final
+instrumented sweep. `software_dynamic_shapes_*.json` record the rejected
+`dynamic=True` compilation experiment. An initial batch-512 run with the original
+compile budget failed requests and has no valid throughput result.
+
+Reproduce the 256-request phase measurement:
+
+```bash
+LFM3_FUSED_PAGED_ATTENTION=0 python scripts/benchmark_tps.py \
+  --concurrency 256 --decode-batch-size 256 --max-batch-tokens 2048 \
+  --max-kv-cache-tokens 32768 --max-new-tokens 64 --repeats 5 \
+  --compile --batch-prefill --phase-timing --output benchmarks/my_software_run.json
+```
+
+For the same short-prompt/output workload through the API:
+
+```bash
+python -m adapters.openai.run --compile-model --enable-prefill-batching \
+  --decode-batch-size 256 --max-concurrent-requests 256 --max-queue-size 256 \
+  --max-batch-tokens 2048 --max-kv-cache-tokens 32768 --default-max-tokens 64
+```
+
+KV capacity is shared across requests; longer prompts or larger output limits
+reduce the number admitted at once. Prefill batching and compilation remain
+opt-in. Larger prefill chunks increase throughput but can delay decode work.
+
+Validation: 177 tests passed in the GPU suite, plus three local-checkpoint tests,
+four real-engine regression tests, and eight convolution checks using Inductor.
+The specialization-budget scope test also passed. Run real-model suites in
+separate processes so their independent cached runtimes fit within 8 GB.
+
+```bash
+python -m pytest -q
+RUN_LOCAL_MODEL_TESTS=1 python -m pytest -q tests/test_model_local.py
+RUN_REAL_ENGINE_TESTS=1 python -m pytest -q tests/test_llmengine_regression_real.py
+LFM3_TEST_COMPILE_BACKEND=inductor python -m pytest -q tests/test_conv_decode.py
+```
+
 ### Model memory and quantization
 
 Measured on the RTX 4070 Laptop 8 GB GPU with the real BF16 checkpoint, greedy

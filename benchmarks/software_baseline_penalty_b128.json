@@ -1,0 +1,51 @@
+{
+  "model": "LiquidAI/LFM3-1.7B",
+  "device": "NVIDIA GeForce RTX 4070 Laptop GPU",
+  "torch_version": "2.15.0+cu132",
+  "config": {
+    "concurrency": 128,
+    "decode_batch_size": 128,
+    "max_batch_tokens": 256,
+    "max_kv_cache_tokens": 16384,
+    "max_queue_size": null,
+    "max_new_tokens": 64,
+    "repeats": 5,
+    "temperature": 0,
+    "top_p": 1,
+    "top_k": 0,
+    "repetition_penalty": 1.1,
+    "prompt": null,
+    "quantization": "none",
+    "fused_paged_attention": false,
+    "compile": false
+  },
+  "warmup_s": 6.789292180000302,
+  "elapsed_s": 26.680991427999743,
+  "generated_tokens": 40960,
+  "aggregate_tokens_per_s": 1535.1753367386298,
+  "peak_allocated_gib": 3.6781649589538574,
+  "waves": [
+    {
+      "elapsed_s": 5.324161973000173,
+      "generated_tokens": 8192
+    },
+    {
+      "elapsed_s": 5.33880968099993,
+      "generated_tokens": 8192
+    },
+    {
+      "elapsed_s": 5.318732918000023,
+      "generated_tokens": 8192
+    },
+    {
+      "elapsed_s": 5.34127523899997,
+      "generated_tokens": 8192
+    },
+    {
+      "elapsed_s": 5.357885382999939,
+      "generated_tokens": 8192
+    }
+  ],
+  "token_hash": "26f5a7dcffbcc5c11aa1bafb8fd3663c61ee7bc0e66916970d206048ccdf1108",
+  "sample_output": "The purpose of a **KV cache** (Key-Value cache) in large language models like Transformers is to **store and reuse the key-value pairs from previous token predictions** during inference, so that we don't have to recompute them for each new token.\n\n### Why it's useful:\n- During autoregressive"
+}

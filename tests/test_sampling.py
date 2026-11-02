@@ -1,18 +1,36 @@
 import torch
+import pytest
 
 from lfm3.attention import RMSNorm
 from inference.sampling import apply_repetition_penalty_, sample_next_token
 
 
+@pytest.mark.parametrize("tensor_ids", [False, True])
+def test_batched_repetition_penalty_applies_once_per_token(tensor_ids):
+    logits = torch.tensor([[2.0, -4.0, 6.0, 8.0], [-2.0, 4.0, -6.0, 8.0]])
+    ids = [[0, 0, 1], [1, 2, 2]]
+    if tensor_ids:
+        ids = torch.tensor(ids)
+    actual = apply_repetition_penalty_(logits, ids, 2.0)
+    torch.testing.assert_close(
+        actual, torch.tensor([[1.0, -8.0, 6.0, 8.0], [-2.0, 2.0, -12.0, 8.0]])
+    )
+
+
+def test_repetition_penalty_handles_empty_and_ragged_histories():
+    logits = torch.tensor([[2.0, -4.0, 6.0], [-2.0, 4.0, -6.0]])
+    actual = apply_repetition_penalty_(logits, [set(), {0, 2}], 2.0)
+    torch.testing.assert_close(
+        actual, torch.tensor([[2.0, -4.0, 6.0], [-4.0, 4.0, -12.0]])
+    )
+
+
 def test_bfloat16_norm_applies_unit_weight_in_float32():
     norm = RMSNorm(4).to(dtype=torch.bfloat16)
-    norm.weight.data.copy_(
-        torch.tensor([0.5, 1.0, 1.5, 2.0], dtype=torch.bfloat16)
-    )
+    norm.weight.data.copy_(torch.tensor([0.5, 1.0, 1.5, 2.0], dtype=torch.bfloat16))
     x = torch.tensor([[1.0, 2.0, 3.0, 4.0]], dtype=torch.bfloat16)
     normalized = (
-        x.float()
-        * torch.rsqrt(x.float().square().mean(-1, keepdim=True) + norm.eps)
+        x.float() * torch.rsqrt(x.float().square().mean(-1, keepdim=True) + norm.eps)
     ).to(x.dtype)
     expected = norm.weight * normalized
     torch.testing.assert_close(norm(x), expected, atol=0, rtol=0)

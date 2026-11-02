@@ -223,37 +223,57 @@ class PagedModelExecutor:
         self, request: RequestState, token_budget: Optional[int] = None
     ) -> bool:
         """Run one prefill chunk; return true once its first token is sampled."""
-        if request.current_input is None:
-            request.current_input = self._next_prefill_chunk(request)
-        if request.current_input is None:
-            return False
-        if token_budget is not None:
-            request.current_input = request.current_input[:, :token_budget]
-        chunk_len = int(request.current_input.shape[1])
-        finishes_prompt = request.prompt_cursor + chunk_len >= len(
-            request.prompt_token_ids
-        )
+        return bool(self.prefill_batch([request], token_budget))
+
+    def prefill_batch(
+        self, requests: List[RequestState], token_budget: Optional[int] = None
+    ) -> List[RequestState]:
+        """Run equal-length chunks with one sampling cohort and completion phase.
+
+        The scheduler forms compatible batches. No padding is needed, so every
+        row writes only real tokens into its KV pages and convolution state.
+        """
+        if not requests:
+            return []
+        chunk_budget = None if token_budget is None else token_budget // len(requests)
+        if chunk_budget is not None and chunk_budget <= 0:
+            raise ValueError("prefill budget must cover at least one token per row")
+        for request in requests:
+            if request.current_input is None:
+                request.current_input = self._next_prefill_chunk(request)
+            if request.current_input is not None and chunk_budget is not None:
+                request.current_input = request.current_input[:, :chunk_budget]
         started = time.perf_counter()
-        if not self._eligible([request]):
-            return False
+        eligible = self._eligible(requests)
+        if not eligible:
+            return []
+        chunk_len = int(eligible[0].current_input.shape[1])
+        finishes_prompt = eligible[0].prompt_cursor + chunk_len >= len(
+            eligible[0].prompt_token_ids
+        )
         logits = self._forward(
-            [request],
+            eligible,
             compute_logits=finishes_prompt,
             use_compiled=self.use_cuda_graph_buckets,
         )
-        if request.status in ("finished", "error"):
-            return False
-        request.prefill_time_s += time.perf_counter() - started
-        request.prefill_steps += 1
-        request.prompt_cursor += chunk_len
+        elapsed = time.perf_counter() - started
+        for request in eligible:
+            request.prefill_time_s += elapsed
+            request.prefill_steps += 1
+            request.prompt_cursor += chunk_len
         if not finishes_prompt:
-            request.current_input = self._next_prefill_chunk(request)
-            return False
-        self.capacity.cache_prefix(
-            "default", request.prompt_token_ids, request.block_table
-        )
-        self._record_token(request, self._sample(logits, [request])[0:1])
-        return True
+            for request in eligible:
+                request.current_input = self._next_prefill_chunk(request)
+            return []
+        for request in eligible:
+            self.capacity.cache_prefix(
+                "default", request.prompt_token_ids, request.block_table
+            )
+        tokens = self._sample(logits, eligible)
+        token_ids = tokens.flatten().tolist()
+        for index, request in enumerate(eligible):
+            self._record_token(request, tokens[index : index + 1], token_ids[index])
+        return eligible
 
     def decode(self, requests: List[RequestState]) -> List[RequestState]:
         eligible = self._eligible(requests)
@@ -420,7 +440,9 @@ class PagedModelExecutor:
         self, logits: torch.Tensor, requests: List[RequestState]
     ) -> torch.Tensor:
         # Model already returns [B, 1, V] when logits_last_only=True.
-        next_logits = logits[:, -1, :].clone()
+        next_logits = logits[:, -1, :]
+        if requests[0].sampling.repetition_penalty > 1.0:
+            next_logits = next_logits.clone()
         next_logits = apply_repetition_penalty_(
             next_logits,
             [r.seen_token_ids for r in requests],

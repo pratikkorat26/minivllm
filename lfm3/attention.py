@@ -103,10 +103,18 @@ class GroupedQueryAttention(nn.Module):
         block_tables: torch.Tensor,
         max_seq_len: int,
         paged_kv_cache: PagedKVCache,
+        key_positions: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Dense SDPA fallback: returns [batch, KV heads, tokens, dim]."""
-        positions = torch.arange(max_seq_len, device=block_tables.device)
-        ids = block_tables[:, positions // paged_kv_cache.block_size].clamp_min(0)
+        if key_positions is None:
+            positions = torch.arange(max_seq_len, device=block_tables.device)
+            ids = block_tables[:, positions // paged_kv_cache.block_size]
+        else:
+            # A short row can extend past its valid keys; the mask excludes
+            # these lanes. Clamp the gather to the allocated table range.
+            positions = key_positions.clamp(max=max_seq_len - 1)
+            ids = block_tables.gather(1, positions // paged_kv_cache.block_size)
+        ids = ids.clamp_min(0)
         offsets = positions % paged_kv_cache.block_size
         keys = paged_kv_cache.k_blocks[ids, :, offsets, :].transpose(1, 2)
         values = paged_kv_cache.v_blocks[ids, :, offsets, :].transpose(1, 2)
@@ -121,15 +129,17 @@ class GroupedQueryAttention(nn.Module):
         kv_lens: torch.Tensor,
         dtype: torch.dtype,
         device: torch.device,
+        key_positions: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Return additive mask ``[B, 1, q_len, max_seq_len]``."""
+        """Return an additive mask ``[B, 1, q_len, gathered_keys]``."""
         batch_size = seq_lens.shape[0]
         q_pos = kv_lens.unsqueeze(1) + torch.arange(
             q_len, device=device, dtype=torch.long
         ).unsqueeze(0)
-        k_pos = torch.arange(max_seq_len, device=device, dtype=torch.long).view(
-            1, 1, max_seq_len
-        )
+        if key_positions is None:
+            k_pos = torch.arange(max_seq_len, device=device).view(1, 1, -1)
+        else:
+            k_pos = key_positions.unsqueeze(1)
         q_pos = q_pos.unsqueeze(-1)
 
         blocked = k_pos > q_pos
@@ -138,7 +148,7 @@ class GroupedQueryAttention(nn.Module):
         blocked = blocked | (k_pos >= seq_lens.view(batch_size, 1, 1))
 
         mask = torch.zeros(
-            (batch_size, q_len, max_seq_len), device=device, dtype=dtype
+            (batch_size, q_len, k_pos.shape[-1]), device=device, dtype=dtype
         )
         mask = mask.masked_fill(blocked, float("-inf"))
         return mask.unsqueeze(1)
@@ -225,10 +235,18 @@ class GroupedQueryAttention(nn.Module):
         """Portable prefill/decode fallback using dense gathered KV and SDPA."""
         q_len = q.shape[2]
         seq_lens = kv_lens + q_len
+        key_positions = None
+        if self.sliding_window is not None and max_seq_len > self.sliding_window:
+            # Gather only the union of keys visible to this chunk. Each row
+            # starts at its own window, so ragged decode remains bounded too.
+            width = min(max_seq_len, self.sliding_window + q_len - 1)
+            starts = (kv_lens - self.sliding_window + 1).clamp_min(0)
+            key_positions = starts[:, None] + torch.arange(width, device=q.device)
         k_cache, v_cache = self._gather_batch_kv(
             block_tables=block_tables,
             max_seq_len=max_seq_len,
             paged_kv_cache=paged_kv_cache,
+            key_positions=key_positions,
         )
 
         attn_mask = self._build_attn_mask(
@@ -238,6 +256,7 @@ class GroupedQueryAttention(nn.Module):
             kv_lens=kv_lens,
             dtype=q.dtype,
             device=q.device,
+            key_positions=key_positions,
         )
         return F.scaled_dot_product_attention(
             q,

@@ -141,6 +141,7 @@ class TransformerBlock(nn.Module):
 
 
 class Lfm3Model(nn.Module):
+    supports_batched_prefill = True
     # Reusing paged KV prefixes would also require restoring the short-conv
     # recurrent state at the cache boundary; not implemented yet.
     supports_prefix_cache = False

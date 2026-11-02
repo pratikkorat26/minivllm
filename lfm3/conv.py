@@ -58,7 +58,18 @@ class ShortConv(nn.Module):
             state = conv_state[slots]
 
         conv_input = torch.cat([state, gated], dim=-1)
-        conv_out = self.conv(conv_input)
+        if seq_len == 1 and torch.compiler.is_compiling():
+            # One output per channel is a short dot product. Expressing
+            # it directly lets torch.compile fuse this with the surrounding
+            # gates instead of calling a general depthwise convolution.
+            conv_out = (
+                conv_input.float() * self.conv.weight[:, 0, :].float()
+            ).sum(dim=-1, keepdim=True)
+            if self.conv.bias is not None:
+                conv_out = conv_out + self.conv.bias.float()[None, :, None]
+            conv_out = conv_out.to(gated.dtype)
+        else:
+            conv_out = self.conv(conv_input)
         if conv_state is not None:
             conv_state[slots] = conv_input[..., -state_len:]
 

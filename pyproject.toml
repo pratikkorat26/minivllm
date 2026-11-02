@@ -23,7 +23,7 @@ dependencies = [
 benchmark = ["matplotlib"]
 reference = ["transformers==5.21.0"]
 quant = ["bitsandbytes>=0.50"]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff", "httpx"]
 
 [project.scripts]
 lfm3-generate = "main:main"

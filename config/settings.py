@@ -38,6 +38,7 @@ class RuntimeSettings:
     kv_block_size: int = 16
     num_kv_blocks: Optional[int] = None
     prefill_chunk_size: Optional[int] = None
+    enable_prefill_batching: bool = False
     enable_prefix_cache: bool = False
     max_prefix_cache_entries: int = 64
 
@@ -143,6 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-kv-blocks", type=_parse_optional_int, default=argparse.SUPPRESS)
     parser.add_argument("--prefill-chunk-size", type=_parse_optional_int, default=argparse.SUPPRESS)
     _add_bool_override(parser, "enable_prefix_cache")
+    _add_bool_override(parser, "enable_prefill_batching")
     parser.add_argument("--max-prefix-cache-entries", type=int, default=argparse.SUPPRESS)
     return parser
 
@@ -253,6 +255,10 @@ def load_settings_from_env(env: Mapping[str, str] = os.environ) -> Settings:
                 _parse_optional_int,
                 runtime_defaults.prefill_chunk_size,
             ),
+            enable_prefill_batching=_from_env(
+                env, "enable_prefill_batching", _parse_bool,
+                runtime_defaults.enable_prefill_batching,
+            ),
             enable_prefix_cache=_from_env(
                 env,
                 "enable_prefix_cache",
@@ -345,6 +351,9 @@ def parse_settings(
             args,
             "prefill_chunk_size",
             settings.runtime.prefill_chunk_size,
+        ),
+        enable_prefill_batching=_override(
+            args, "enable_prefill_batching", settings.runtime.enable_prefill_batching,
         ),
         enable_prefix_cache=_override(
             args,

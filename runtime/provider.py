@@ -160,8 +160,12 @@ class Lfm3Runtime:
         )
         self.tokenizer = Lfm3Tokenizer(tokenizer_path)
 
-        # Compilation is optional: it improves measured throughput after a long
-        # warmup, but CUDA graph capture is skipped for the mutating KV cache.
+        # Stable engine-owned cache addresses allow CUDA graph replay. Prefill
+        # and decode need several shape/phase specializations; the default
+        # eight-entry limit can silently send later shapes back to eager mode.
         if self.compile_model:
-            self.model = torch.compile(self.model, mode="reduce-overhead")
+            compiled_forward = torch.compile(self.model.forward, mode="reduce-overhead")
+            self.model.forward = torch._dynamo.config.patch(cache_size_limit=32)(
+                compiled_forward
+            )
         self.model.eval()

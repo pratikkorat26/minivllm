@@ -6,14 +6,19 @@ tensor execution, scheduling and memory management are implemented here rather
 than delegated to an inference library. Developed and measured on an **RTX 4070
 Laptop, 8 GB, SM89**.
 
+See the dated [project status](docs/status.md) for completed work, validation,
+key architectural decisions, and the next CPU-backed KV-cache objective.
+
 ## Implemented
 
 - Continuous **ragged decode batching**, fair across sampling cohorts.
 - A token budget shared by decode and chunked prefill, with progress for both phases.
+- Opt-in batching of equal-length prefill chunks with compatible sampling settings.
 - KV-aware admission reserving maximum request growth; bounded outstanding requests.
 - Physical KV pages, logical block tables, reference counting, LRU eviction under
   memory pressure, cancellation and cleanup.
 - Vectorized KV writes/gathers and RoPE; PyTorch SDPA with grouped-query attention.
+  Sliding layers gather only the keys visible to the current chunk.
 - Packed Q/K/V and FFN gate/up projections, plus opt-in Triton paged decode attention.
 - LFM3 short-convolution layers with per-request conv state, mixed with full and
   sliding-window attention layers.
@@ -47,6 +52,7 @@ python main.py --prompt "Explain KV caching in one sentence." --max-new-tokens 3
 python main.py --prompt "Explain KV caching in one sentence." --quantization int8
 python -m adapters.openai.run
 python -m adapters.openai.run --compile-model  # experimental; long first-request warmup
+python -m adapters.openai.run --compile-model --enable-prefill-batching
 python query_fastapi.py --stream --prompt "Explain continuous batching."
 ```
 
@@ -75,6 +81,12 @@ near-tied token choices; the tests check logits/tolerances, not universal token
 identity. Keep the attention flag off to use the portable SDPA path.
 Long contexts in the paged path automatically use split-KV parallelism with an
 FP32 softmax merge; short contexts and ordinary sliding windows stay single-pass.
+
+`--enable-prefill-batching` (or `LFM3_API_ENABLE_PREFILL_BATCHING=true`) groups
+equal-length prompt chunks within the existing token budget. It reduces repeated
+weight reads when serving concurrent requests. Different BF16 GEMM shapes can
+change near-tied greedy token choices, so this option is explicit. Its measured
+throughput and recommended batch settings are in [benchmarks](benchmarks/README.md).
 
 ### Quantization
 
@@ -124,8 +136,8 @@ flowchart LR
 4. Each tick runs a decode cohort, then prefills using the remaining token budget.
    If decode consumes the budget, the next turn serves prefill.
 5. The worker builds metadata, writes KV and conv state, runs attention and
-   samples. Decode IDs are copied to CPU once per batch. Prefill remains one
-   request per forward.
+   samples. Sampled IDs are copied to CPU once per batch. Compatible prefill
+   chunks can share a forward when prefill batching is enabled.
 6. JSON resolves the future; SSE consumes a bounded event queue. Completion,
    cancellation, timeout and errors release request references.
 
@@ -134,6 +146,21 @@ HTTP handlers can run during model steps. See [architecture](docs/architecture.m
 the [pre-change audit](docs/audit.md), and the [study guide](docs/study.md).
 
 ## Measurements
+
+### Linux software optimization pass (November 2026)
+
+On the same RTX 4070 Laptop 8 GB, PyTorch 2.15 BF16 with compilation, equal-length
+prefill batching, and a 2,048-token budget measured about **5,004 output tokens/s
+at concurrency 256**. At the same concurrency of 128, software changes and budget
+tuning increased aggregate output throughput from 1,769 to 3,983 tokens/s.
+No custom attention kernel was enabled. These use short prompts and 64 output
+tokens, exclude warmup, and measure the engine rather than HTTP serving.
+
+Separate worker-phase measurements reached **9,191 prefill input tokens/s** on
+an 8,118-token prompt and **6,161 aggregate decode output tokens/s** at batch 256.
+One conversation decoded at about **61 tokens/s** for short context and **51**
+at 8K context. Phase rates exclude time spent in the other phase and are not
+end-to-end throughput. See [raw results, methodology, and commands](benchmarks/README.md#pytorch-software-optimization-pass-linux-november-1-2026).
 
 ### LFM3 model memory
 
@@ -316,7 +343,8 @@ Settings use the `LFM3_API_*` prefix. Main controls:
 `MODEL_ID`, `QUANTIZATION`, `COMPILE_MODEL`, `MAX_BATCH_TOKENS`,
 `PREFILL_CHUNK_SIZE`, `DECODE_BATCH_SIZE`, `MAX_CONCURRENT_REQUESTS`,
 `MAX_QUEUE_SIZE`, `MAX_KV_CACHE_TOKENS`, `KV_BLOCK_SIZE`, `NUM_KV_BLOCKS`,
-`REQUEST_TIMEOUT_S`, `ENABLE_PREFIX_CACHE`. `max_queue_size` bounds **all outstanding requests**,
+`REQUEST_TIMEOUT_S`, `ENABLE_PREFIX_CACHE`, `ENABLE_PREFILL_BATCHING`.
+`max_queue_size` bounds **all outstanding requests**,
 including active ones. `prefill_chunk_size=None` uses the token budget as the
 chunk bound. `ENABLE_PREFIX_CACHE` must stay false for LFM3.
 

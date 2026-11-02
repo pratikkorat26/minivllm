@@ -176,10 +176,11 @@ class AsyncScheduler:
             if self.decode and not (self.prefill and self._prefill_turn):
                 budget -= await self._run_decode()
             self._prefill_turn = bool(self.prefill and budget <= 0)
-            for _ in range(len(self.prefill)):
-                if budget <= 0 or self._closed:
-                    break
-                budget -= await self._run_prefill(budget)
+            remaining = len(self.prefill)
+            while remaining and budget > 0 and not self._closed:
+                tokens, requests = await self._run_prefill(budget, remaining)
+                budget -= tokens
+                remaining -= requests
             self.last_scheduled_tokens = self.config.max_batch_tokens - budget
             await asyncio.sleep(0)
 
@@ -232,35 +233,84 @@ class AsyncScheduler:
             elif self._expired(online.request):
                 self._complete(online, StopReason.TIMEOUT.value, "request timed out")
 
-    async def _run_prefill(self, budget: int) -> int:
+    def _select_prefill_batch(
+        self, budget: int, remaining: int
+    ) -> list[ScheduledRequest]:
+        """Anchor on the oldest chunk; batch matching rows from this round."""
         online = self.prefill.popleft()
-        if online.result.done():
-            return 0
-        before = len(online.request.generated_ids)
+        selected = [online]
+        if (
+            online.result.done()
+            or not self.config.enable_prefill_batching
+            or not getattr(
+                self.executor.runtime.model, "supports_batched_prefill", False
+            )
+        ):
+            return selected
+        request = online.request
+        if request.current_input is None:
+            return selected
+        chunk_len = min(budget, int(request.current_input.shape[1]))
+        finishes = request.prompt_cursor + chunk_len >= len(request.prompt_token_ids)
+        limit = min(self.config.decode_batch_size, budget // chunk_len)
+        if limit <= 1:
+            return selected
+        deferred = []
+        for _ in range(min(remaining - 1, len(self.prefill))):
+            candidate = self.prefill.popleft()
+            other = candidate.request
+            if (
+                len(selected) < limit
+                and not candidate.result.done()
+                and other.current_input is not None
+                and int(other.current_input.shape[1]) == chunk_len
+                and other.sampling == request.sampling
+                and (other.prompt_cursor + chunk_len >= len(other.prompt_token_ids))
+                == finishes
+            ):
+                selected.append(candidate)
+            else:
+                deferred.append(candidate)
+        self.prefill.extendleft(reversed(deferred))
+        return selected
+
+    async def _run_prefill(self, budget: int, remaining: int) -> tuple[int, int]:
+        selected = self._select_prefill_batch(budget, remaining)
+        if selected[0].result.done():
+            return 0, 1
+        before = {o.request_id: len(o.request.generated_ids) for o in selected}
         started = time.perf_counter()
         try:
-            count = min(budget, int(online.request.current_input.shape[1]))
+            count = min(budget, int(selected[0].request.current_input.shape[1])) * len(
+                selected
+            )
             completed_prefill = await asyncio.get_running_loop().run_in_executor(
-                self._worker, self.executor.prefill, online.request, budget
+                self._worker,
+                self.executor.prefill_batch,
+                [online.request for online in selected],
+                budget,
             )
         except Exception as exc:
-            self._complete(online, StopReason.ERROR.value, str(exc))
-            return 0
+            for online in selected:
+                self._complete(online, StopReason.ERROR.value, str(exc))
+            return 0, len(selected)
         self.last_prefill_batch_size, self.last_prefill_latency_ms = (
-            1,
+            len(selected),
             (time.perf_counter() - started) * 1000,
         )
         self._expire_or_cancel()
-        if online.result.done():
-            return count
-        self._emit_token(online, before)
-        if online.request.status in ("finished", "error"):
-            self._complete(online)
-        elif completed_prefill:
-            self.decode.append(online)
-        else:
-            self.prefill.append(online)
-        return count
+        completed_ids = {r.request_id for r in completed_prefill}
+        for online in selected:
+            if online.result.done():
+                continue
+            self._emit_token(online, before[online.request_id])
+            if online.request.status in ("finished", "error"):
+                self._complete(online)
+            elif online.request.request_id in completed_ids:
+                self.decode.append(online)
+            else:
+                self.prefill.append(online)
+        return count, len(selected)
 
     async def _run_decode(self) -> int:
         by_id = {o.request_id: o for o in self.decode if not o.result.done()}

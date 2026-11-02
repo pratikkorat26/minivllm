@@ -88,3 +88,36 @@ def test_chunked_prefill_outputs_match(runtime):
         assert chunked.stats().kv_blocks_used == 0
 
     asyncio.run(run())
+
+
+def test_batched_prefill_logits_are_close_to_serial(runtime):
+    # These raw prompts have equal token lengths, including a near-tied top
+    # candidate. Compare logits because BF16 GEMM shapes can change argmax ties.
+    engine = LLMEngine(runtime, settings())
+    requests = [
+        engine.executor.build_request(str(i), prompt, None, 8, 0)
+        for i, prompt in enumerate(
+            (
+                "Explain batching in one concise sentence.",
+                "Write one line about prompt templating.",
+                "Describe top-k sampling in plain words.",
+            )
+        )
+    ]
+    try:
+        for request in requests:
+            engine.executor.initialize(request)
+        expected = [engine.executor._forward([r]).clone() for r in requests]
+        for request in requests:
+            engine.executor.finish(request, "max_new_tokens")
+            engine.executor.initialize(request)
+        actual = engine.executor._forward(requests)
+        tolerance = 0.5 if runtime.dtype == torch.bfloat16 else 1e-3
+        for row, reference in enumerate(expected):
+            assert (actual[row : row + 1] - reference).abs().max().item() < tolerance
+            chosen = actual[row, -1].argmax()
+            assert (reference.max() - reference[0, -1, chosen]).item() < tolerance
+    finally:
+        for request in requests:
+            engine.executor.finish(request, "max_new_tokens")
+        asyncio.run(engine.shutdown())

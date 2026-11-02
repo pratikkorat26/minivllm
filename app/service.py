@@ -98,6 +98,9 @@ class ChatCompletionService:
                 kv_block_size=int(_config_value(config, "kv_block_size", 16)),
                 num_kv_blocks=_config_value(config, "num_kv_blocks", None),
                 prefill_chunk_size=_config_value(config, "prefill_chunk_size", None),
+                enable_prefill_batching=bool(
+                    _config_value(config, "enable_prefill_batching", False)
+                ),
                 enable_prefix_cache=bool(
                     _config_value(config, "enable_prefix_cache", False)
                 ),

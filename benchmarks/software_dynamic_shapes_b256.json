@@ -1,0 +1,71 @@
+{
+  "model": "LiquidAI/LFM3-1.7B",
+  "device": "NVIDIA GeForce RTX 4070 Laptop GPU",
+  "torch_version": "2.15.0+cu132",
+  "config": {
+    "concurrency": 256,
+    "decode_batch_size": 256,
+    "max_batch_tokens": 256,
+    "max_kv_cache_tokens": 32768,
+    "max_queue_size": null,
+    "max_new_tokens": 64,
+    "repeats": 5,
+    "phase_timing": true,
+    "batch_prefill": true,
+    "temperature": 0,
+    "top_p": 1,
+    "top_k": 0,
+    "repetition_penalty": 1,
+    "prompt": null,
+    "quantization": "none",
+    "fused_paged_attention": false,
+    "compile": true
+  },
+  "warmup_s": 79.44255380899995,
+  "elapsed_s": 38.967448036999485,
+  "generated_tokens": 81920,
+  "aggregate_tokens_per_s": 2102.2675111343497,
+  "peak_allocated_gib": 4.254882335662842,
+  "waves": [
+    {
+      "elapsed_s": 7.699613515000237,
+      "generated_tokens": 16384
+    },
+    {
+      "elapsed_s": 7.714256532000036,
+      "generated_tokens": 16384
+    },
+    {
+      "elapsed_s": 8.272804650999205,
+      "generated_tokens": 16384
+    },
+    {
+      "elapsed_s": 7.590917929999705,
+      "generated_tokens": 16384
+    },
+    {
+      "elapsed_s": 7.689483610000025,
+      "generated_tokens": 16384
+    }
+  ],
+  "token_hash": "eb281dea8992a8bc79d868064130346852e950b4ab1bc392f1d76a31dc56c72d",
+  "sample_output": "The purpose of a KV cache is to **store and reuse key-value pairs from previous computations** during inference (especially in transformer-based models like LLMs) to avoid redundant calculations and speed up response generation.\n\nWhen generating text token by token, the model needs to compute attention over all previous tokens. Instead of recomput",
+  "phases": {
+    "prefill": {
+      "tokens": 24000,
+      "steps": 600,
+      "device_elapsed_s": 14.738609731674194,
+      "worker_wall_s": 14.72539156001676,
+      "tokens_per_s": 1628.3761112435523,
+      "mean_step_ms": 24.564349552790326
+    },
+    "decode": {
+      "tokens": 80640,
+      "steps": 635,
+      "device_elapsed_s": 23.620631507873536,
+      "worker_wall_s": 23.614413955995587,
+      "tokens_per_s": 3413.9646085719605,
+      "mean_step_ms": 37.197844894289034
+    }
+  }
+}

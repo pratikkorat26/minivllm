@@ -39,7 +39,12 @@ Decode selects the oldest request's sampling cohort, capped by batch size and
 `max_batch_tokens`. Sequence lengths may differ; every decode input is one token.
 Remaining budget serves one chunk from each queued prefill, in round-robin order.
 When decode exhausts the budget while prefill waits, the next tick reserves a
-prefill turn. Forwards are separate: no mixed or batched ragged prefill kernel.
+prefill turn. With `enable_prefill_batching`, the oldest chunk anchors a batch
+of equal-length chunks with matching sampling settings and completion phase.
+Each request receives at most one chunk per round, and the sum of all chunk
+lengths must fit the remaining token budget. Prior KV lengths may differ; no
+padding or mixed prefill/decode forward is needed. Models advertise support
+through `supports_batched_prefill`.
 
 Admission reserves
 `ceil(min(context_limit, prompt_tokens + max_new_tokens - 1) / block_size)` pages,
@@ -102,17 +107,37 @@ request and carries it across prefill chunks and decode steps.
 SDPA receives Q `[B,H,Q,D]`, K/V `[B,G,S,D]`, `enable_gqa=True`, and additive mask
 `[B,1,Q,S]` combining causal, sliding and per-row lengths. PyTorch chooses the
 backend; no particular fused kernel is forced. Dense gather is still an O(context)
-allocation/copy. Inference mode is used, final-position logits are `[B,1,V]`, and
+allocation/copy for full-attention layers. Sliding layers gather at most
+`window + chunk_length - 1` keys per row, starting at each row's own window;
+their masks retain absolute positions for causal and ragged-length checks.
+In compiled single-token decode, short convolutions use an FP32 dot product
+over the recurrent state and new input, allowing pointwise fusion. Eager and
+multi-token execution retain the general depthwise convolution.
+Inference mode is used, final-position logits are `[B,1,V]`, and
 sampled decode IDs transfer to CPU once per batch. Intermediate prefill chunks
 skip vocabulary projection.
 
 CUDA BF16 and CPU FP32 are supported without Hopper-specific instructions. The
 optional int8 path stores per-output-channel int8 weights and uses PyTorch's
 weight-only int8 kernel on CUDA when available; otherwise it dequantizes before
-the matmul. int4 uses bitsandbytes NF4 and is experimental. Explicit CUDA graph
-capture/replay is not implemented: dynamic allocations/shapes need stable buffers
-and replay ownership first. Opt-in `torch.compile` is experimental, not a graph
-replay feature claim.
+the matmul. int4 uses bitsandbytes NF4 and is experimental.
+
+Opt-in `torch.compile(mode="reduce-overhead")` owns CUDA graph capture/replay.
+The executor marks persistent KV and convolution buffers as static-address inputs
+and buckets decode batch/context sizes. RoPE buffers grow eagerly before compiled
+execution so graph-pool outputs cannot become persistent cache storage. The runtime
+wraps the compiled forward with a 32-entry specialization budget: prefill/decode
+phase and shape variations otherwise exhausted the default eight entries and
+triggered eager fallback. The configuration patch is restored after every call,
+including failures. Compilation remains experimental; warmup and capture costs
+are excluded from steady-state measurements. There is no manually managed CUDA
+graph implementation.
+
+Repetition penalties upload one batch of row/token indices instead of launching
+copies and indexing operations per request. Tensor histories use gather/scatter
+on the device; duplicate IDs receive the penalty once. Logits are copied only
+when the penalty will mutate them. A completed prefill batch, like decode, copies
+sampled IDs to the CPU once before updating per-request state.
 
 ## Lifecycle and serving
 
@@ -142,7 +167,15 @@ first-to-last token time divided by subsequent token count, including scheduler
 waits. Legacy prefill/decode host timing spans are not exact CUDA kernel timings.
 Use client-observed throughput/latency and synchronized microbenchmarks for claims.
 
+The throughput runner's optional `--phase-timing` records CUDA events around worker
+phases, without synchronizing each intermediate chunk. Prefill rates count input
+tokens; decode rates count generated tokens after the first token, which is sampled
+during prefill. Phase time includes sampling, transfers and launch gaps inside that
+worker call; queueing and the other phase are excluded. End-to-end generation rates
+include both phases and scheduling. See the dated [status](status.md) for the
+validated configuration and remaining work.
+
 Limits: one model/device/tenant, synchronous tokenization, Python bookkeeping,
-dense gather, full KV storage even for sliding layers, no prefix cache for LFM3,
-no preemption or graph replay, and recorded BF16 reference differences. See
+dense gather for full attention, full KV storage even for sliding layers, no prefix cache for LFM3,
+no preemption, and recorded BF16 reference differences. See
 [performance and validation](../benchmarks/README.md).

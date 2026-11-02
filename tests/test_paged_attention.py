@@ -6,6 +6,46 @@ from lfm3.paged_kv import PagedKVCache
 from lfm3.rope import RotaryEmbedding, apply_rope_single
 
 
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+@pytest.mark.parametrize("query_len", [1, 3, 9])
+def test_window_gather_matches_full_history_for_ragged_chunks(device, query_len):
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA unavailable")
+    torch.manual_seed(21)
+    window, context = 4, 32  # Context includes padding for compiled shapes.
+    attention = GroupedQueryAttention(16, 4, 2, 4, sliding_window=window).to(device)
+    cache = PagedKVCache.empty(
+        num_blocks=24,
+        num_kv_groups=2,
+        block_size=4,
+        head_dim=4,
+        device=torch.device(device),
+        dtype=torch.float32,
+    )
+    cache.k_blocks.normal_()
+    cache.v_blocks.normal_()
+    tables = torch.randperm(24, device=device).reshape(3, 8)
+    lengths = torch.tensor([0, 5, 17], device=device)
+    q = torch.randn(3, 4, query_len, 4, device=device)
+
+    actual = attention._dense_attention(q, tables, lengths, cache, context)
+    keys, values = attention._gather_batch_kv(
+        block_tables=tables,
+        max_seq_len=context,
+        paged_kv_cache=cache,
+    )
+    scores = q @ keys.repeat_interleave(2, dim=1).transpose(-1, -2)
+    scores *= attention.scale
+    q_positions = (
+        lengths[:, None, None] + torch.arange(query_len, device=device)[None, :, None]
+    )
+    k_positions = torch.arange(context, device=device)[None, None, :]
+    blocked = (k_positions > q_positions) | (k_positions <= q_positions - window)
+    scores.masked_fill_(blocked[:, None], float("-inf"))
+    expected = scores.softmax(-1) @ values.repeat_interleave(2, dim=1)
+    torch.testing.assert_close(actual, expected, atol=2e-6, rtol=2e-5)
+
+
 @pytest.mark.parametrize("groups", [1, 2])
 def test_physical_page_layout(groups):
     attention = GroupedQueryAttention(16, 4, groups, 4)

@@ -12,19 +12,30 @@ def apply_repetition_penalty_(
         return logits
 
     if isinstance(all_token_ids, torch.Tensor):
-        token_rows = [torch.unique(all_token_ids[batch_idx]).tolist() for batch_idx in range(logits.size(0))]
-    else:
-        token_rows = [list(token_ids) for token_ids in all_token_ids]
+        # Gather before scattering, so repeated IDs receive the penalty once.
+        ids = all_token_ids.to(device=logits.device, dtype=torch.long)
+        used_logits = logits.gather(1, ids)
+        logits.scatter_(
+            1,
+            ids,
+            torch.where(used_logits < 0, used_logits * penalty, used_logits / penalty),
+        )
+        return logits
+    token_rows = [list(token_ids) for token_ids in all_token_ids]
 
+    # Upload one index tensor for the whole batch instead of launching a copy
+    # and several indexing kernels for each request.
+    rows, ids = [], []
     for batch_idx, used_ids in enumerate(token_rows):
-        if not used_ids:
-            continue
-        used_ids_tensor = torch.tensor(used_ids, device=logits.device, dtype=torch.long)
-        used_logits = logits[batch_idx, used_ids_tensor]
-        logits[batch_idx, used_ids_tensor] = torch.where(
-            used_logits < 0,
-            used_logits * penalty,
-            used_logits / penalty,
+        rows.extend([batch_idx] * len(used_ids))
+        ids.extend(used_ids)
+    if ids:
+        row_indices, token_indices = torch.tensor(
+            [rows, ids], device=logits.device, dtype=torch.long
+        ).unbind(0)
+        used_logits = logits[row_indices, token_indices]
+        logits[row_indices, token_indices] = torch.where(
+            used_logits < 0, used_logits * penalty, used_logits / penalty
         )
     return logits
 

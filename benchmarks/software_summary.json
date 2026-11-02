@@ -1,0 +1,52 @@
+{
+  "device": "RTX 4070 Laptop 8 GB",
+  "torch": "2.15.0+cu132",
+  "dtype": "bfloat16",
+  "custom_paged_attention": false,
+  "max_batch_tokens": 2048,
+  "output_tokens_per_request": 64,
+  "measured_waves": 5,
+  "phase_timing": "CUDA events around worker phases",
+  "rows": [
+    {
+      "workload": "One short prompt (19 tokens)",
+      "source": "software_phases_b1_budget2048.json",
+      "prefill_input_tokens_per_s": 860.2975160110009,
+      "decode_output_tokens_per_s": 60.84862778355988,
+      "end_to_end_output_tokens_per_s": 59.7089660835744,
+      "peak_allocated_gib": 3.577363967895508
+    },
+    {
+      "workload": "128 concurrent short prompts",
+      "source": "software_phases_b128_budget2048.json",
+      "prefill_input_tokens_per_s": 8241.529866782817,
+      "decode_output_tokens_per_s": 4657.201724299478,
+      "end_to_end_output_tokens_per_s": 3982.943933709673,
+      "peak_allocated_gib": 3.7979421615600586
+    },
+    {
+      "workload": "256 concurrent short prompts",
+      "source": "software_phases_b256_budget2048.json",
+      "prefill_input_tokens_per_s": 8808.352775395566,
+      "decode_output_tokens_per_s": 6161.102956535244,
+      "end_to_end_output_tokens_per_s": 5003.877275563648,
+      "peak_allocated_gib": 4.272160530090332
+    },
+    {
+      "workload": "512 concurrent short prompts",
+      "source": "software_phases_b512_budget2048.json",
+      "prefill_input_tokens_per_s": 8848.413342429933,
+      "decode_output_tokens_per_s": 6070.92805151279,
+      "end_to_end_output_tokens_per_s": 5038.131384747098,
+      "peak_allocated_gib": 5.282018661499023
+    },
+    {
+      "workload": "One long prompt (8,118 tokens)",
+      "source": "software_phases_long_budget2048.json",
+      "prefill_input_tokens_per_s": 9190.982530208637,
+      "decode_output_tokens_per_s": 51.46961695686455,
+      "end_to_end_output_tokens_per_s": 29.999162639936003,
+      "peak_allocated_gib": 3.676198959350586
+    }
+  ]
+}
