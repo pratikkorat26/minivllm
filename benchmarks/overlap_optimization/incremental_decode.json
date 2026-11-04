@@ -1,0 +1,23 @@
+{
+  "kind": "cpu_tokenizer_microbenchmark",
+  "cases": 56,
+  "matching_valid_utf8_prefixes": 1847,
+  "timings": [
+    {
+      "tokens": 64,
+      "full_prefix_s": 0.0003209429996786639,
+      "incremental_s": 4.8095998863573186e-05
+    },
+    {
+      "tokens": 512,
+      "full_prefix_s": 0.01677703000132169,
+      "incremental_s": 0.00035904500145989005
+    },
+    {
+      "tokens": 2048,
+      "full_prefix_s": 0.25152789399908215,
+      "incremental_s": 0.0013672709992533782
+    }
+  ],
+  "caveat": "Tokenizer time only; not model or serving throughput."
+}

@@ -1,0 +1,21 @@
+timestamp,pstate,utilization.gpu,utilization.memory,power.draw.average,power.draw.instant,enforced.power.limit,clocks.sm,clocks.mem,temperature.gpu,clocks_event_reasons.sw_power_cap,clocks_event_reasons.hw_power_brake_slowdown,clocks_event_reasons.sw_thermal_slowdown,clocks_event_reasons.hw_thermal_slowdown
+2026/11/02 22:54:23.792, P0, 93, 72, 95.03, 92.94, 115.00, 2445, 8001, 72, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:24.295, P0, 93, 72, 95.03, 92.94, 115.00, 2445, 8001, 72, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:24.795, P0, 97, 53, 95.07, 97.29, 115.00, 2445, 8001, 75, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:25.295, P0, 91, 63, 94.81, 93.22, 115.00, 2445, 8001, 74, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:25.795, P0, 92, 67, 95.21, 94.87, 115.00, 2445, 8001, 74, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:26.296, P0, 91, 67, 95.08, 94.49, 115.00, 2445, 8001, 74, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:26.796, P0, 93, 71, 95.24, 96.44, 115.00, 2445, 8001, 74, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:27.296, P0, 92, 71, 95.25, 95.44, 115.00, 2445, 8001, 75, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:27.796, P0, 100, 37, 94.46, 106.96, 115.00, 2445, 8001, 76, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:28.296, P0, 93, 74, 95.71, 87.22, 115.00, 2445, 8001, 75, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:28.797, P0, 94, 69, 97.43, 95.96, 115.00, 2445, 8001, 75, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:29.297, P0, 93, 67, 94.34, 95.31, 115.00, 2445, 8001, 74, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:29.797, P0, 93, 68, 95.23, 94.54, 115.00, 2445, 8001, 75, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:30.297, P0, 92, 72, 95.14, 95.70, 115.00, 2445, 8001, 76, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:30.798, P0, 92, 71, 95.20, 93.00, 115.00, 2445, 8001, 75, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:31.298, P0, 98, 38, 95.64, 103.03, 115.00, 2445, 8001, 77, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:31.798, P0, 92, 63, 96.01, 95.93, 115.00, 2445, 8001, 75, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:32.298, P0, 93, 68, 96.69, 95.94, 115.00, 2445, 8001, 75, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:32.799, P0, 90, 67, 95.79, 94.60, 115.00, 2445, 8001, 75, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:54:33.299, P0, 91, 67, 95.96, 96.22, 115.00, 2445, 8001, 75, Not Active, Not Active, Not Active, Not Active

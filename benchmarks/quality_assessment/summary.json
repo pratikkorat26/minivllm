@@ -1,0 +1,141 @@
+{
+  "scope": "18 handwritten tasks; 14 strict automatically checked tasks and 4 manually reviewed writing/code tasks; not a general accuracy benchmark",
+  "modes": {
+    "eager_greedy": {
+      "strict_pass": 9,
+      "strict_total": 14,
+      "failed_strict": [
+        "arithmetic",
+        "discount",
+        "schedule",
+        "sql",
+        "multi_turn"
+      ],
+      "truncated": [],
+      "contains_think_end": [],
+      "long_context_code_recovered": 3,
+      "long_context_trials": 3,
+      "long_context_prompt_tokens": 7109,
+      "exact_text_matches_reference": 14,
+      "responses": 18
+    },
+    "default_sampling": {
+      "strict_pass": 8,
+      "strict_total": 14,
+      "failed_strict": [
+        "arithmetic",
+        "discount",
+        "schedule",
+        "sql",
+        "multi_turn",
+        "long_end"
+      ],
+      "truncated": [
+        "arithmetic"
+      ],
+      "contains_think_end": [
+        "discount",
+        "long_end"
+      ],
+      "long_context_code_recovered": 3,
+      "long_context_trials": 3,
+      "long_context_prompt_tokens": 7109,
+      "exact_text_matches_reference": 9,
+      "responses": 18
+    },
+    "recommended_sampling": {
+      "strict_pass": 8,
+      "strict_total": 14,
+      "failed_strict": [
+        "arithmetic",
+        "discount",
+        "schedule",
+        "sql",
+        "multi_turn",
+        "long_end"
+      ],
+      "truncated": [],
+      "contains_think_end": [],
+      "long_context_code_recovered": 3,
+      "long_context_trials": 3,
+      "long_context_prompt_tokens": 7109,
+      "exact_text_matches_reference": 10,
+      "responses": 18
+    },
+    "optimized_greedy": {
+      "strict_pass": 8,
+      "strict_total": 14,
+      "failed_strict": [
+        "arithmetic",
+        "discount",
+        "schedule",
+        "sql",
+        "multi_turn",
+        "long_end"
+      ],
+      "truncated": [],
+      "contains_think_end": [
+        "long_end"
+      ],
+      "long_context_code_recovered": 3,
+      "long_context_trials": 3,
+      "long_context_prompt_tokens": 7109,
+      "exact_text_matches_reference": 15,
+      "responses": 18
+    },
+    "reference_greedy": {
+      "strict_pass": 8,
+      "strict_total": 14,
+      "failed_strict": [
+        "arithmetic",
+        "discount",
+        "schedule",
+        "sql",
+        "multi_turn",
+        "long_end"
+      ],
+      "truncated": [],
+      "contains_think_end": [
+        "discount",
+        "long_end"
+      ],
+      "long_context_code_recovered": 3,
+      "long_context_trials": 3,
+      "long_context_prompt_tokens": 7109,
+      "exact_text_matches_reference": 18,
+      "responses": 18
+    }
+  },
+  "prompting_probe": [
+    {
+      "id": "sql_schema",
+      "grade": {
+        "automatic": true,
+        "pass_strict": false,
+        "query_correct": false,
+        "error": "You can only execute one statement at a time.",
+        "format_correct": false
+      }
+    },
+    {
+      "id": "math_json",
+      "grade": {
+        "automatic": true,
+        "pass_strict": false
+      }
+    },
+    {
+      "id": "multi_turn_strict",
+      "grade": {
+        "automatic": true,
+        "pass_strict": true
+      }
+    }
+  ],
+  "manual_review": {
+    "email": "Useful editable draft; two body sentences, no invented reason.",
+    "summary": "Core chronology preserved; awkward wording says errors were rolled back rather than deployment.",
+    "translation": "Meaning preserved; au lundi is less idiomatic than \u00e0 lundi in this context.",
+    "python": "All five reviewed implementations passed 5/5 functional checks after Markdown removal. Default sampling uses quadratic list membership; other variants use a set. Markdown violates the requested plain-code format."
+  }
+}

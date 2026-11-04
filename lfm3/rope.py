@@ -59,10 +59,7 @@ class RotaryEmbedding(nn.Module):
         rope_angles = int(self.partial_rotary_factor * dim) // 2
         inv_freq = 1.0 / (
             self.theta
-            ** (
-                torch.arange(0, 2 * rope_angles, 2, dtype=torch.float32)
-                / float(dim)
-            )
+            ** (torch.arange(0, 2 * rope_angles, 2, dtype=torch.float32) / float(dim))
         )
         if inv_freq.numel() < dim // 2:
             inv_freq = torch.cat(
@@ -86,9 +83,7 @@ class RotaryEmbedding(nn.Module):
         )
 
     @torch.no_grad()
-    def _build_cache(
-        self, seq_len: int, device: Optional[torch.device] = None
-    ) -> None:
+    def _build_cache(self, seq_len: int, device: Optional[torch.device] = None) -> None:
         if device is None:
             device = self.inv_freq.device
         inv = self.inv_freq.to(device=device)
@@ -101,14 +96,32 @@ class RotaryEmbedding(nn.Module):
 
     @torch.no_grad()
     def ensure_capacity(
-        self, seq_len: int, device: Optional[torch.device] = None
+        self,
+        seq_len: int,
+        device: Optional[torch.device] = None,
+        *,
+        restore_cache_dtype: bool = False,
     ) -> None:
         if device is None:
             device = self.inv_freq.device
-        if self.cos_cached.device != device:
+        device = torch.device(device)
+        # Tensor devices include a CUDA index. Resolve the current-device alias
+        # before comparing, otherwise "cuda" rebuilds a "cuda:0" cache each step.
+        if device.type == "cuda" and device.index is None:
+            device = torch.device("cuda", torch.cuda.current_device())
+        elif device.type == "cpu":
+            device = torch.device("cpu")
+        # Module.to(dtype=...) also casts buffers. Rebuild in the cache dtype
+        # once when preparing compiled execution. Ordinary eager calls retain
+        # their existing buffer precision until a device change or growth.
+        if self.cos_cached.device != device or (
+            restore_cache_dtype and self.cos_cached.dtype != self.cache_dtype
+        ):
             self._build_cache(max(seq_len, self.max_seq_len_cached), device=device)
         if seq_len > self.max_seq_len_cached:
-            new_len = max(seq_len, int(self.max_seq_len_cached * self.growth_factor) + 1)
+            new_len = max(
+                seq_len, int(self.max_seq_len_cached * self.growth_factor) + 1
+            )
             self._build_cache(new_len, device=device)
 
     def get_cos_sin(

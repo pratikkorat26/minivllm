@@ -1,0 +1,14 @@
+{
+  "trace_path": "/tmp/minivllm_overlap_traces/profile_full_b256_n64.json",
+  "cpu_stream_flushes": 64,
+  "cpu_stream_flush_ms": 73.395136,
+  "cpu_stream_flush_overlapping_gpu_kernels_ms": 69.43679296875,
+  "overlap_fraction": 0.9460680469173053,
+  "gpu_kernel_union_ms": 3039.412703125,
+  "copies": {
+    "Memcpy HtoD (Pageable -> Device)": 294,
+    "Memcpy DtoH (Device -> Pinned)": 70,
+    "Memcpy DtoD (Device -> Device)": 4
+  },
+  "caveat": "Profiler perturbs execution. Kernel intervals are merged; overlap duration is not throughput gain."
+}

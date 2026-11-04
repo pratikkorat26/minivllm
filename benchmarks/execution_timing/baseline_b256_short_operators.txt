@@ -1,0 +1,31 @@
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg    # of Calls
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+## Call CompiledFxGraph fu2nlkzuvvjlzdsclftzec4qw3dk...         0.00%       0.000us         0.00%       0.000us       0.000us     587.987ms        99.45%     587.987ms      36.749ms            16
+                             Torch-Compiled Region: 0/3         0.11%     664.940us         1.29%       8.104ms     506.505us     585.295ms        99.00%     585.326ms      36.583ms            16
+ampere_bf16_s1688gemm_bf16_128x128_ldg8_f2f_stages_3...         0.00%       0.000us         0.00%       0.000us       0.000us     317.441ms        53.69%     317.441ms     275.557us          1152
+fmha_cutlassF_bf16_aligned_64x128_rf_sm80(PyTorchMem...         0.00%       0.000us         0.00%       0.000us       0.000us     128.487ms        21.73%     128.487ms     730.039us           176
+void cutlass::Kernel2<cutlass_80_tensorop_bf16_s1681...         0.00%       0.000us         0.00%       0.000us       0.000us      55.139ms         9.33%      55.139ms       3.446ms            16
+ampere_bf16_s16816gemm_bf16_128x128_ldg8_f2f_stages_...         0.00%       0.000us         0.00%       0.000us       0.000us      22.896ms         3.87%      22.896ms      59.625us           384
+triton_poi_fused__scaled_dot_product_efficient_atten...         0.00%       0.000us         0.00%       0.000us       0.000us      22.876ms         3.87%      22.876ms     129.979us           176
+triton_poi_fused__unsafe_view_cat_index_mul_split_tr...         0.00%       0.000us         0.00%       0.000us       0.000us       8.483ms         1.43%       8.483ms      40.784us           208
+         triton_poi_fused__unsafe_view_mul_silu_split_4         0.00%       0.000us         0.00%       0.000us       0.000us       8.236ms         1.39%       8.236ms      21.448us           384
+                    executor.forward_including_metadata         0.00%       0.000us         0.00%       0.000us       0.000us       6.711ms         1.14%       6.711ms     419.462us            16
+triton_red_fused__to_copy__unsafe_view_add_mean_mul_...         0.00%       0.000us         0.00%       0.000us       0.000us       5.151ms         0.87%       5.151ms      13.997us           368
+                                           aten::argmax         0.03%     207.148us         0.05%     308.838us      19.302us       4.636ms         0.78%       4.636ms     289.734us            16
+void at::native::reduce_kernel<512, 1, at::native::R...         0.00%       0.000us         0.00%       0.000us       0.000us       4.636ms         0.78%       4.636ms     289.734us            16
+                                      executor.sampling         0.00%       0.000us         0.00%       0.000us       0.000us       4.636ms         0.78%       4.636ms     289.734us            16
+triton_poi_fused__unsafe_view_cat_index_index_put_mu...         0.00%       0.000us         0.00%       0.000us       0.000us       4.323ms         0.73%       4.323ms      54.034us            80
+triton_red_fused__to_copy__unsafe_view_add_mean_mul_...         0.00%       0.000us         0.00%       0.000us       0.000us       3.475ms         0.59%       3.475ms       9.442us           368
+triton_poi_fused__to_copy__unsafe_view_mul_select_sp...         0.00%       0.000us         0.00%       0.000us       0.000us       2.316ms         0.39%       2.316ms      11.132us           208
+triton_poi_fused__unsafe_view_cat_index_index_put_mu...         0.00%       0.000us         0.00%       0.000us       0.000us       1.642ms         0.28%       1.642ms     102.643us            16
+void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_...         0.00%       0.000us         0.00%       0.000us       0.000us       1.244ms         0.21%       1.244ms       7.069us           176
+triton_per_fused__scaled_dot_product_efficient_atten...         0.00%       0.000us         0.00%       0.000us       0.000us       1.043ms         0.18%       1.043ms       5.926us           176
+                                              aten::cat         0.15%     929.155us         0.31%       1.946ms      40.547us     894.947us         0.15%     894.947us      18.645us            48
+void at::native::(anonymous namespace)::CatArrayBatc...         0.00%       0.000us         0.00%       0.000us       0.000us     808.131us         0.14%     808.131us      25.254us            32
+                                       Memset (Unknown)         0.00%       0.000us         0.00%       0.000us       0.000us     729.993us         0.12%     729.993us       0.652us          1120
+triton_poi_fused__unsafe_view_mul_sigmoid_transpose_...         0.00%       0.000us         0.00%       0.000us       0.000us     562.980us         0.10%     562.980us       3.199us           176
+triton_per_fused__to_copy__unsafe_view_add_arange_ca...         0.00%       0.000us         0.00%       0.000us       0.000us     452.295us         0.08%     452.295us       2.570us           176
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+Self CPU time total: 626.332ms
+Self CUDA time total: 591.218ms

@@ -5,7 +5,8 @@ the sole caller and therefore the sole owner of model and KV-cache mutation.
 """
 
 import time
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import Callable, List, Optional
 
 import torch
 
@@ -14,13 +15,24 @@ from lfm3.tokenizer import apply_chat_template
 from .config import EngineConfig, SamplingConfig
 from .kv import KVBlockManager
 from .sampling import apply_repetition_penalty_, sample_next_token
-from .types import GenerateResult, RequestState
+from .types import GenerateResult, RequestState, StreamingTextState
 
 
 def _next_power_of_two(value: int) -> int:
     """Round a positive tensor dimension up to a stable graph-size bucket."""
     value = max(1, int(value))
     return 1 << (value - 1).bit_length()
+
+
+@dataclass
+class DecodeMetadata:
+    """One bounded cache entry, owned exclusively by the execution worker."""
+
+    signature: tuple
+    previous_lengths: tuple
+    tables: torch.Tensor
+    lengths: torch.Tensor
+    slots: Optional[torch.Tensor]
 
 
 class PagedModelExecutor:
@@ -72,6 +84,10 @@ class PagedModelExecutor:
 
         self.prefix_cache_hits = 0
         self.prefix_cache_misses = 0
+        self._decode_metadata = None
+        self._token_copy_buffer = None
+        self._token_copy_event = None
+        self.last_decode_step_count = 1
 
     def _mark_cache_addresses_static(self) -> None:
         """Keep mutable cache buffers at stable addresses for CUDA graph replay."""
@@ -152,6 +168,8 @@ class PagedModelExecutor:
     def initialize(self, request: RequestState) -> None:
         request.status = "active"
         request.generated_ids = []
+        request.emitted_text = ""
+        request.streaming_text = None
         request.all_token_ids = list(request.prompt_token_ids)
         request.seen_token_ids = set(request.prompt_token_ids)
         request.block_table = []
@@ -270,40 +288,162 @@ class PagedModelExecutor:
                 "default", request.prompt_token_ids, request.block_table
             )
         tokens = self._sample(logits, eligible)
-        token_ids = tokens.flatten().tolist()
-        for index, request in enumerate(eligible):
-            self._record_token(request, tokens[index : index + 1], token_ids[index])
+        token_ids = self._copy_token_ids(tokens)
+        for request, token, token_id in zip(eligible, tokens.split(1), token_ids):
+            self._record_token(request, token, token_id)
         return eligible
 
-    def decode(self, requests: List[RequestState]) -> List[RequestState]:
+    def decode(
+        self,
+        requests: List[RequestState],
+        *,
+        on_device_work_queued: Optional[Callable[[], None]] = None,
+        max_steps: Optional[int] = None,
+    ) -> List[RequestState]:
+        self.last_decode_step_count = 1
         eligible = self._eligible(requests)
         if not eligible:
             return []
+        self.last_decode_step_count = self._decode_chunk_size(eligible)
+        if max_steps is not None:
+            self.last_decode_step_count = min(self.last_decode_step_count, max_steps)
+        if self.last_decode_step_count > 1:
+            return self._decode_chunk(
+                eligible, self.last_decode_step_count, on_device_work_queued
+            )
         started = time.perf_counter()
         logits = self._forward(
             eligible, use_compiled=self.use_cuda_graph_buckets, pad_decode_batch=True
         )
         tokens = self._sample(logits, eligible)
-        token_ids = tokens.flatten().tolist()  # One device-to-host transfer per batch.
+        token_ids = self._copy_token_ids(tokens, on_device_work_queued)
         elapsed = time.perf_counter() - started
-        for index, request in enumerate(eligible):
+        for request, token, token_id in zip(eligible, tokens.split(1), token_ids):
             request.decode_time_s += elapsed
             request.decode_steps += 1
-            self._record_token(request, tokens[index : index + 1], token_ids[index])
+            self._record_token(request, token, token_id)
         return eligible
 
-    def token_text(self, request: RequestState) -> str:
+    def _decode_chunk_size(self, requests):
+        """Bound exact greedy steps by fairness, reservation and context limits."""
+        if (
+            self.config.decode_steps_per_round == 1
+            or not self.use_cuda_graph_buckets
+            or any(
+                r.sampling.temperature != 0 or r.sampling.repetition_penalty != 1
+                for r in requests
+            )
+        ):
+            return 1
+        return max(
+            1,
+            min(
+                self.config.decode_steps_per_round,
+                self.config.max_batch_tokens // len(requests),
+                min(r.max_new_tokens - len(r.generated_ids) for r in requests),
+                min(self.context_limit() - r.live_kv_tokens for r in requests),
+            ),
+        )
+
+    def _decode_chunk(self, requests, steps, on_device_work_queued):
+        """Chain exact GPU argmax outputs without intermediate host barriers.
+
+        Pages remain private and reserved for every queued position. An EOS row
+        may do unused work until this bounded chunk ends; only tokens through its
+        first EOS are recorded. No guessed tokens or draft model are involved.
+        """
+        started = time.perf_counter()
+        outputs, inputs = [], None
+        for _ in range(steps):
+            logits = self._forward(
+                requests, use_compiled=True, pad_decode_batch=True, input_batch=inputs
+            )
+            inputs = self._sample(logits, requests)
+            outputs.append(inputs)
+        tokens = torch.cat(outputs, dim=1)
+        ids = self._copy_token_ids(tokens, on_device_work_queued)
+        elapsed = time.perf_counter() - started
+        for row, (request, final_input) in enumerate(
+            zip(requests, outputs[-1].split(1))
+        ):
+            request.decode_time_s += elapsed
+            request.decode_steps += self._record_token_ids(
+                request, ids[row * steps : (row + 1) * steps]
+            )
+            if request.status == "active":
+                # Intermediate GPU views are never consumed by another forward;
+                # only the final sampled tensor becomes the next chunk's input.
+                request.current_input = final_input
+        return requests
+
+    def _copy_token_ids(self, tokens, on_device_work_queued=None):
+        """Queue one pinned D2H copy, then let independent host work proceed.
+
+        The worker owns this buffer until the event completes. No consumer may
+        read it, or release model state, before this method returns.
+        """
+        if tokens.is_cuda and self.config.enable_pinned_token_copy:
+            count = tokens.numel()
+            if (
+                self._token_copy_buffer is None
+                or self._token_copy_buffer.numel() < count
+            ):
+                self._token_copy_buffer = torch.empty(
+                    _next_power_of_two(count), dtype=tokens.dtype, pin_memory=True
+                )
+                self._token_copy_event = torch.cuda.Event()
+            host = self._token_copy_buffer[:count]
+            host.copy_(tokens.flatten(), non_blocking=True)
+            self._token_copy_event.record(torch.cuda.current_stream(tokens.device))
+            if on_device_work_queued is not None:
+                on_device_work_queued()
+            self._token_copy_event.synchronize()
+            return host.tolist()
+        if on_device_work_queued is not None:
+            on_device_work_queued()
+        return tokens.flatten().tolist()
+
+    def token_text(
+        self, request: RequestState, *, token_count: Optional[int] = None, finished=None
+    ) -> str:
         if not request.generated_ids:
             return ""
-        # Decode the accumulated sequence so UTF-8 byte fallback tokens can
-        # complete before emission. Never emit a transient replacement character.
-        ids = request.generated_ids
-        if ids[-1] == request.eos_token_id:
-            ids = ids[:-1]
-        text = self.runtime.tokenizer.decode(ids)
-        if text.endswith("\ufffd") and request.status == "active":
+        count = len(request.generated_ids) if token_count is None else token_count
+        if request.generated_ids[count - 1] == request.eos_token_id:
+            count -= 1
+        if finished is None:
+            finished = request.status != "active"
+        if (
+            self.config.enable_incremental_detokenization
+            and request.streaming_text is None
+        ):
+            factory = getattr(self.runtime.tokenizer, "create_stream_decoder", None)
+            decoder = factory() if factory is not None else None
+            if decoder is not None:
+                request.streaming_text = StreamingTextState(decoder)
+        state = request.streaming_text
+        if state is not None and not finished:
+            # Prefixes are immutable even if the worker appends a newer token.
+            # Decode only the suffix; do not copy or decode the entire history.
+            suffix = request.generated_ids[state.consumed_tokens : count]
+            state.pending_text += state.decode(suffix) if suffix else ""
+            state.consumed_tokens = count
+            if state.pending_text.endswith("\ufffd"):
+                return ""
+            delta, state.pending_text = state.pending_text, ""
+            state.emitted_chars += len(delta)
+            return delta
+        # Decode once at completion to flush an unfinished UTF-8 tail. Generic
+        # tokenizers without incremental support retain their existing behavior.
+        text = self.runtime.tokenizer.decode(request.generated_ids[:count])
+        if text.endswith("\ufffd") and not finished:
             return ""
-        delta = text[len(request.emitted_text) :]
+        emitted_chars = (
+            state.emitted_chars if state is not None else len(request.emitted_text)
+        )
+        delta = text[emitted_chars:]
+        if state is not None:
+            state.emitted_chars = len(text)
         request.emitted_text = text
         return delta
 
@@ -350,8 +490,13 @@ class PagedModelExecutor:
         compute_logits: bool = True,
         use_compiled: bool = False,
         pad_decode_batch: bool = False,
+        input_batch: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        inputs = torch.cat([request.current_input for request in eligible], dim=0)
+        inputs = (
+            input_batch
+            if input_batch is not None
+            else torch.cat([request.current_input for request in eligible], dim=0)
+        )
         active_batch_size = len(eligible)
         padded_batch_size = active_batch_size
         if pad_decode_batch and self.use_cuda_graph_buckets:
@@ -374,6 +519,104 @@ class PagedModelExecutor:
                 max_seq_len + self.capacity.block_size - 1
             ) // self.capacity.block_size
             width = _next_power_of_two(max(width, blocks_for_attention))
+        tables, lengths, slot_tensor = self._batch_metadata(
+            eligible,
+            padded_batch_size,
+            width,
+            cache_metadata=(
+                pad_decode_batch
+                and use_compiled
+                and self.config.enable_decode_metadata_cache
+            ),
+        )
+        conv_kwargs = (
+            {}
+            if slot_tensor is None
+            else {
+                "conv_state_caches": self.conv_state_caches,
+                "conv_slots": slot_tensor,
+            }
+        )
+        if use_compiled:
+            # RoPE buffers outlive a forward. Grow them eagerly so they never
+            # retain graph-pool outputs overwritten at the next step boundary.
+            for name in ("rope_sliding", "rope_full"):
+                rope = getattr(self.runtime.model, name, None)
+                if rope is not None:
+                    rope.ensure_capacity(
+                        max_seq_len,
+                        device=self.runtime.device,
+                        restore_cache_dtype=True,
+                    )
+            torch.compiler.cudagraph_mark_step_begin()
+        with torch.inference_mode():
+            logits = self.runtime.model(
+                inputs,
+                block_tables=tables,
+                kv_lens=lengths,
+                paged_kv_caches=self.paged_kv_caches,
+                compute_logits=compute_logits,
+                logits_last_only=True,
+                max_seq_len=max_seq_len,
+                **conv_kwargs,
+            )
+        if padded_batch_size > active_batch_size:
+            logits = logits[:active_batch_size]
+        for request in eligible:
+            request.live_kv_tokens += int(request.current_input.shape[1])
+        return logits
+
+    def _batch_metadata(self, eligible, padded_batch_size, width, *, cache_metadata):
+        """Validate a stable decode cohort before reusing device metadata."""
+        active_batch_size = len(eligible)
+        slots = None
+        if self.conv_state_caches is not None:
+            try:
+                slots = [self._conv_slots[r.request_id] for r in eligible]
+            except KeyError as exc:
+                raise RuntimeError(
+                    "missing conv state slot for active request"
+                ) from exc
+            slots.extend(
+                self.config.max_concurrent_requests + lane - active_batch_size
+                for lane in range(active_batch_size, padded_batch_size)
+            )
+
+        signature = (
+            (
+                tuple((id(r), tuple(r.block_table)) for r in eligible),
+                padded_batch_size,
+                width,
+                None if slots is None else tuple(slots),
+            )
+            if cache_metadata
+            else None
+        )
+        current_lengths = tuple(r.live_kv_tokens for r in eligible)
+        cached = self._decode_metadata if cache_metadata else None
+        reuse = (
+            cached is not None
+            and cached.signature == signature
+            and current_lengths == tuple(n + 1 for n in cached.previous_lengths)
+        )
+        if reuse:
+            # All operations use the worker's current stream: the preceding
+            # forward consumes these lengths before this increment can execute.
+            cached.lengths[:active_batch_size].add_(1)
+            cached.previous_lengths = current_lengths
+            tables, lengths, slot_tensor = cached.tables, cached.lengths, cached.slots
+        else:
+            tables, lengths, slot_tensor = self._make_batch_metadata(
+                eligible, padded_batch_size, width, slots
+            )
+            if cache_metadata:
+                self._decode_metadata = DecodeMetadata(
+                    signature, current_lengths, tables, lengths, slot_tensor
+                )
+        return tables, lengths, slot_tensor
+
+    def _make_batch_metadata(self, eligible, padded_batch_size, width, slots):
+        active_batch_size = len(eligible)
         table_rows = [
             r.block_table + [-1] * (width - len(r.block_table)) for r in eligible
         ]
@@ -393,48 +636,12 @@ class PagedModelExecutor:
                 device=lengths.device,
             )
             lengths = torch.cat((lengths, padding))
-        conv_kwargs = {}
-        if self.conv_state_caches is not None:
-            try:
-                slots = [self._conv_slots[request.request_id] for request in eligible]
-            except KeyError as exc:
-                raise RuntimeError(
-                    "missing conv state slot for active request"
-                ) from exc
-            for lane in range(active_batch_size, padded_batch_size):
-                slots.append(
-                    self.config.max_concurrent_requests + lane - active_batch_size
-                )
-            conv_kwargs = {
-                "conv_state_caches": self.conv_state_caches,
-                "conv_slots": torch.tensor(
-                    slots, dtype=torch.long, device=self.runtime.device
-                ),
-            }
-        if use_compiled:
-            # RoPE buffers outlive a forward. Grow them eagerly so they never
-            # retain graph-pool outputs overwritten at the next step boundary.
-            for name in ("rope_sliding", "rope_full"):
-                rope = getattr(self.runtime.model, name, None)
-                if rope is not None:
-                    rope.ensure_capacity(max_seq_len, device=self.runtime.device)
-            torch.compiler.cudagraph_mark_step_begin()
-        with torch.inference_mode():
-            logits = self.runtime.model(
-                inputs,
-                block_tables=tables,
-                kv_lens=lengths,
-                paged_kv_caches=self.paged_kv_caches,
-                compute_logits=compute_logits,
-                logits_last_only=True,
-                max_seq_len=max_seq_len,
-                **conv_kwargs,
-            )
-        if padded_batch_size > active_batch_size:
-            logits = logits[:active_batch_size]
-        for request in eligible:
-            request.live_kv_tokens += int(request.current_input.shape[1])
-        return logits
+        slot_tensor = (
+            None
+            if slots is None
+            else torch.tensor(slots, dtype=torch.long, device=self.runtime.device)
+        )
+        return tables, lengths, slot_tensor
 
     def _sample(
         self, logits: torch.Tensor, requests: List[RequestState]
@@ -473,16 +680,26 @@ class PagedModelExecutor:
     ) -> None:
         if next_id is None:
             next_id = int(token.item())
+        self._record_token_ids(request, [next_id])
+        if request.status == "active":
+            request.current_input = token
+
+    def _record_token_ids(self, request: RequestState, next_ids: List[int]) -> int:
+        """Commit a row in bulk, stopping at its first EOS before releasing KV."""
+        eos = request.eos_token_id
+        stopped = eos is not None and eos in next_ids
+        if stopped:
+            next_ids = next_ids[: next_ids.index(eos) + 1]
         now = time.perf_counter()
         if request.first_token_at_s is None:
             request.first_token_at_s = now
         request.last_token_at_s = now
-        request.generated_ids.append(next_id)
-        if request.eos_token_id is not None and next_id == request.eos_token_id:
+        request.generated_ids.extend(next_ids)
+        history = next_ids[:-1] if stopped else next_ids
+        request.all_token_ids.extend(history)
+        request.seen_token_ids.update(history)
+        if stopped:
             self.finish(request, "eos")
-            return
-        request.all_token_ids.append(next_id)
-        request.seen_token_ids.add(next_id)
-        request.current_input = token
-        if len(request.generated_ids) >= request.max_new_tokens:
+        elif len(request.generated_ids) >= request.max_new_tokens:
             self.finish(request, "max_new_tokens")
+        return len(next_ids)

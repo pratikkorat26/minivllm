@@ -1,0 +1,31 @@
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg    # of Calls
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+## Call CompiledFxGraph fflewhwvsytzcr4pdxzmrx5vdrrc...         0.00%       0.000us         0.00%       0.000us       0.000us     254.012ms       102.44%     254.012ms      15.876ms            16
+                             Torch-Compiled Region: 0/2         0.22%     592.462us         2.37%       6.281ms     392.540us     247.045ms        99.63%     247.074ms      15.442ms            16
+std::enable_if<!(false), void>::type internal::gemvx...         0.00%       0.000us         0.00%       0.000us       0.000us     186.073ms        75.04%     186.073ms     159.309us          1168
+std::enable_if<!(false), void>::type internal::gemvx...         0.00%       0.000us         0.00%       0.000us       0.000us      53.618ms        21.62%      53.618ms      95.747us           560
+triton_per_fused__to_copy__unsafe_view_add_arange_ca...         0.00%       0.000us         0.00%       0.000us       0.000us       1.384ms         0.56%       1.384ms       7.863us           176
+                                       Memset (Unknown)         0.00%       0.000us         0.00%       0.000us       0.000us       1.325ms         0.53%       1.325ms       3.764us           352
+fmha_cutlassF_bf16_aligned_64x128_rf_sm80(PyTorchMem...         0.00%       0.000us         0.00%       0.000us       0.000us       1.239ms         0.50%       1.239ms       7.037us           176
+                    executor.forward_including_metadata         0.00%       0.000us         0.00%       0.000us       0.000us       1.069ms         0.43%       1.069ms      66.798us            16
+triton_red_fused__to_copy__unsafe_view_add_mean_mul_...         0.00%       0.000us         0.00%       0.000us       0.000us     692.545us         0.28%     692.545us       1.882us           368
+triton_red_fused__to_copy__unsafe_view_add_mean_mul_...         0.00%       0.000us         0.00%       0.000us       0.000us     665.964us         0.27%     665.964us       1.810us           368
+                                            aten::copy_         0.07%     192.910us        94.40%     250.014ms       3.906ms     513.639us         0.21%     513.639us       8.026us            64
+                       Memcpy DtoH (Device -> Pageable)         0.00%       0.000us         0.00%       0.000us       0.000us     494.980us         0.20%     494.980us      30.936us            16
+                                   executor.decode_step         0.00%       0.000us         0.00%       0.000us       0.000us     494.980us         0.20%     494.980us      30.936us            16
+                                           aten::argmax         0.07%     186.148us         0.11%     300.635us      18.790us     369.123us         0.15%     369.123us      23.070us            16
+void at::native::reduce_kernel<512, 1, at::native::R...         0.00%       0.000us         0.00%       0.000us       0.000us     369.123us         0.15%     369.123us      23.070us            16
+                                      executor.sampling         0.00%       0.000us         0.00%       0.000us       0.000us     369.123us         0.15%     369.123us      23.070us            16
+         triton_poi_fused__unsafe_view_mul_silu_split_5         0.00%       0.000us         0.00%       0.000us       0.000us     367.877us         0.15%     367.877us       0.958us           384
+triton_poi_fused__scaled_dot_product_efficient_atten...         0.00%       0.000us         0.00%       0.000us       0.000us     263.050us         0.11%     263.050us       1.495us           176
+triton_poi_fused__unsafe_view_cat_index_mul_split_tr...         0.00%       0.000us         0.00%       0.000us       0.000us     257.447us         0.10%     257.447us       1.238us           208
+triton_per_fused__scaled_dot_product_efficient_atten...         0.00%       0.000us         0.00%       0.000us       0.000us     222.778us         0.09%     222.778us       1.266us           176
+triton_poi_fused__unsafe_view_cat_index_index_put_mu...         0.00%       0.000us         0.00%       0.000us       0.000us     213.817us         0.09%     213.817us       1.028us           208
+triton_poi_fused__to_copy__unsafe_view_mul_select_sp...         0.00%       0.000us         0.00%       0.000us       0.000us     210.370us         0.08%     210.370us       1.011us           208
+triton_poi_fused__scaled_dot_product_efficient_atten...         0.00%       0.000us         0.00%       0.000us       0.000us     170.463us         0.07%     170.463us       1.776us            96
+triton_poi_fused__unsafe_view_mul_sigmoid_transpose_...         0.00%       0.000us         0.00%       0.000us       0.000us     166.473us         0.07%     166.473us       0.946us           176
+triton_poi_fused__scaled_dot_product_efficient_atten...         0.00%       0.000us         0.00%       0.000us       0.000us      84.894us         0.03%      84.894us       1.061us            80
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------
+Self CPU time total: 264.848ms
+Self CUDA time total: 247.973ms

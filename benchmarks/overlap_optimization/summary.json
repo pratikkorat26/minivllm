@@ -1,0 +1,585 @@
+{
+  "kind": "warmed_engine_streaming_overlap_comparison",
+  "comparisons": [
+    {
+      "run": "full_b256_n64",
+      "batch_size": 256,
+      "output_token_cap": 64,
+      "steps_per_round": 1,
+      "baseline_output_tokens_per_s": 4813.179415442885,
+      "optimized_output_tokens_per_s": 5016.0570952665075,
+      "observed_change_percent": 4.21504503182859,
+      "matching_token_and_text_hashes": true,
+      "median_worker_round_ms": 40.04350600007456,
+      "median_scheduler_extra_ms": 0.5952189967501909,
+      "gpu_telemetry": {
+        "csv_path": "/home/pratik/Projects/Inference/minivllm/benchmarks/overlap_optimization/final/full_b256_n64.gpu.csv",
+        "samples": 33,
+        "busy_samples": 32,
+        "busy_threshold_gpu_utilization_percent": 80,
+        "all_samples": {
+          "utilization.gpu": {
+            "min": 76.0,
+            "median": 96.0,
+            "max": 100.0
+          },
+          "utilization.memory": {
+            "min": 35.0,
+            "median": 70.0,
+            "max": 76.0
+          },
+          "power.draw.average": {
+            "min": 83.45,
+            "median": 97.94,
+            "max": 99.58
+          },
+          "power.draw.instant": {
+            "min": 82.04,
+            "median": 98.78,
+            "max": 108.02
+          },
+          "enforced.power.limit": {
+            "min": 115.0,
+            "median": 115.0,
+            "max": 115.0
+          },
+          "clocks.sm": {
+            "min": 2445.0,
+            "median": 2445.0,
+            "max": 2445.0
+          },
+          "clocks.mem": {
+            "min": 8001.0,
+            "median": 8001.0,
+            "max": 8001.0
+          },
+          "temperature.gpu": {
+            "min": 73.0,
+            "median": 77.0,
+            "max": 80.0
+          }
+        },
+        "busy_samples_summary": {
+          "utilization.gpu": {
+            "min": 92.0,
+            "median": 96.0,
+            "max": 100.0
+          },
+          "utilization.memory": {
+            "min": 35.0,
+            "median": 70.5,
+            "max": 76.0
+          },
+          "power.draw.average": {
+            "min": 83.45,
+            "median": 98.00999999999999,
+            "max": 99.58
+          },
+          "power.draw.instant": {
+            "min": 88.04,
+            "median": 98.78999999999999,
+            "max": 108.02
+          },
+          "enforced.power.limit": {
+            "min": 115.0,
+            "median": 115.0,
+            "max": 115.0
+          },
+          "clocks.sm": {
+            "min": 2445.0,
+            "median": 2445.0,
+            "max": 2445.0
+          },
+          "clocks.mem": {
+            "min": 8001.0,
+            "median": 8001.0,
+            "max": 8001.0
+          },
+          "temperature.gpu": {
+            "min": 73.0,
+            "median": 77.0,
+            "max": 80.0
+          }
+        },
+        "throttle_active_samples": {
+          "clocks_event_reasons.sw_power_cap": 0,
+          "clocks_event_reasons.hw_power_brake_slowdown": 0,
+          "clocks_event_reasons.sw_thermal_slowdown": 0,
+          "clocks_event_reasons.hw_thermal_slowdown": 0
+        },
+        "error": null
+      }
+    },
+    {
+      "run": "full_s8_b256_n64",
+      "batch_size": 256,
+      "output_token_cap": 64,
+      "steps_per_round": 8,
+      "baseline_output_tokens_per_s": 4813.179415442885,
+      "optimized_output_tokens_per_s": 5250.113762313209,
+      "observed_change_percent": 9.077873670539649,
+      "matching_token_and_text_hashes": true,
+      "median_worker_round_ms": 299.9177099991357,
+      "median_scheduler_extra_ms": 0.6562495000252966,
+      "gpu_telemetry": {
+        "csv_path": "/home/pratik/Projects/Inference/minivllm/benchmarks/overlap_optimization/final/full_s8_b256_n64.gpu.csv",
+        "samples": 32,
+        "busy_samples": 31,
+        "busy_threshold_gpu_utilization_percent": 80,
+        "all_samples": {
+          "utilization.gpu": {
+            "min": 77.0,
+            "median": 100.0,
+            "max": 100.0
+          },
+          "utilization.memory": {
+            "min": 36.0,
+            "median": 73.0,
+            "max": 78.0
+          },
+          "power.draw.average": {
+            "min": 98.05,
+            "median": 100.58500000000001,
+            "max": 102.73
+          },
+          "power.draw.instant": {
+            "min": 78.64,
+            "median": 101.875,
+            "max": 108.94
+          },
+          "enforced.power.limit": {
+            "min": 115.0,
+            "median": 115.0,
+            "max": 115.0
+          },
+          "clocks.sm": {
+            "min": 2445.0,
+            "median": 2445.0,
+            "max": 2445.0
+          },
+          "clocks.mem": {
+            "min": 8001.0,
+            "median": 8001.0,
+            "max": 8001.0
+          },
+          "temperature.gpu": {
+            "min": 71.0,
+            "median": 78.0,
+            "max": 81.0
+          }
+        },
+        "busy_samples_summary": {
+          "utilization.gpu": {
+            "min": 93.0,
+            "median": 100.0,
+            "max": 100.0
+          },
+          "utilization.memory": {
+            "min": 36.0,
+            "median": 73.0,
+            "max": 78.0
+          },
+          "power.draw.average": {
+            "min": 98.05,
+            "median": 100.56,
+            "max": 102.73
+          },
+          "power.draw.instant": {
+            "min": 79.44,
+            "median": 101.95,
+            "max": 108.94
+          },
+          "enforced.power.limit": {
+            "min": 115.0,
+            "median": 115.0,
+            "max": 115.0
+          },
+          "clocks.sm": {
+            "min": 2445.0,
+            "median": 2445.0,
+            "max": 2445.0
+          },
+          "clocks.mem": {
+            "min": 8001.0,
+            "median": 8001.0,
+            "max": 8001.0
+          },
+          "temperature.gpu": {
+            "min": 71.0,
+            "median": 78.0,
+            "max": 81.0
+          }
+        },
+        "throttle_active_samples": {
+          "clocks_event_reasons.sw_power_cap": 0,
+          "clocks_event_reasons.hw_power_brake_slowdown": 0,
+          "clocks_event_reasons.sw_thermal_slowdown": 0,
+          "clocks_event_reasons.hw_thermal_slowdown": 0
+        },
+        "error": null
+      }
+    },
+    {
+      "run": "full_s8_pcores_b256_n64",
+      "batch_size": 256,
+      "output_token_cap": 64,
+      "steps_per_round": 8,
+      "baseline_output_tokens_per_s": 4813.179415442885,
+      "optimized_output_tokens_per_s": 5253.301895347871,
+      "observed_change_percent": 9.144111239503584,
+      "matching_token_and_text_hashes": true,
+      "median_worker_round_ms": 300.66266000176256,
+      "median_scheduler_extra_ms": 0.6456640021497151,
+      "gpu_telemetry": {
+        "csv_path": "/home/pratik/Projects/Inference/minivllm/benchmarks/overlap_optimization/final/full_s8_pcores_b256_n64.gpu.csv",
+        "samples": 32,
+        "busy_samples": 31,
+        "busy_threshold_gpu_utilization_percent": 80,
+        "all_samples": {
+          "utilization.gpu": {
+            "min": 78.0,
+            "median": 100.0,
+            "max": 100.0
+          },
+          "utilization.memory": {
+            "min": 35.0,
+            "median": 74.0,
+            "max": 77.0
+          },
+          "power.draw.average": {
+            "min": 97.49,
+            "median": 101.02,
+            "max": 102.82
+          },
+          "power.draw.instant": {
+            "min": 77.3,
+            "median": 101.63499999999999,
+            "max": 108.9
+          },
+          "enforced.power.limit": {
+            "min": 115.0,
+            "median": 115.0,
+            "max": 115.0
+          },
+          "clocks.sm": {
+            "min": 2445.0,
+            "median": 2445.0,
+            "max": 2445.0
+          },
+          "clocks.mem": {
+            "min": 8001.0,
+            "median": 8001.0,
+            "max": 8001.0
+          },
+          "temperature.gpu": {
+            "min": 75.0,
+            "median": 78.0,
+            "max": 80.0
+          }
+        },
+        "busy_samples_summary": {
+          "utilization.gpu": {
+            "min": 94.0,
+            "median": 100.0,
+            "max": 100.0
+          },
+          "utilization.memory": {
+            "min": 35.0,
+            "median": 74.0,
+            "max": 77.0
+          },
+          "power.draw.average": {
+            "min": 97.49,
+            "median": 101.08,
+            "max": 102.82
+          },
+          "power.draw.instant": {
+            "min": 90.17,
+            "median": 101.72,
+            "max": 108.9
+          },
+          "enforced.power.limit": {
+            "min": 115.0,
+            "median": 115.0,
+            "max": 115.0
+          },
+          "clocks.sm": {
+            "min": 2445.0,
+            "median": 2445.0,
+            "max": 2445.0
+          },
+          "clocks.mem": {
+            "min": 8001.0,
+            "median": 8001.0,
+            "max": 8001.0
+          },
+          "temperature.gpu": {
+            "min": 75.0,
+            "median": 78.0,
+            "max": 80.0
+          }
+        },
+        "throttle_active_samples": {
+          "clocks_event_reasons.sw_power_cap": 0,
+          "clocks_event_reasons.hw_power_brake_slowdown": 0,
+          "clocks_event_reasons.sw_thermal_slowdown": 0,
+          "clocks_event_reasons.hw_thermal_slowdown": 0
+        },
+        "error": null
+      }
+    },
+    {
+      "run": "full_b128_n512",
+      "batch_size": 128,
+      "output_token_cap": 512,
+      "steps_per_round": 1,
+      "baseline_output_tokens_per_s": 2790.920689942758,
+      "optimized_output_tokens_per_s": 2990.14887968918,
+      "observed_change_percent": 7.138439672053454,
+      "matching_token_and_text_hashes": true,
+      "median_worker_round_ms": 43.89998899932834,
+      "median_scheduler_extra_ms": 0.46929499876569025,
+      "gpu_telemetry": {
+        "csv_path": "/home/pratik/Projects/Inference/minivllm/benchmarks/overlap_optimization/final/full_b128_n512.gpu.csv",
+        "samples": 132,
+        "busy_samples": 131,
+        "busy_threshold_gpu_utilization_percent": 80,
+        "all_samples": {
+          "utilization.gpu": {
+            "min": 72.0,
+            "median": 96.0,
+            "max": 99.0
+          },
+          "utilization.memory": {
+            "min": 46.0,
+            "median": 83.0,
+            "max": 92.0
+          },
+          "power.draw.average": {
+            "min": 78.15,
+            "median": 92.11,
+            "max": 96.56
+          },
+          "power.draw.instant": {
+            "min": 75.34,
+            "median": 92.015,
+            "max": 102.71
+          },
+          "enforced.power.limit": {
+            "min": 115.0,
+            "median": 115.0,
+            "max": 115.0
+          },
+          "clocks.sm": {
+            "min": 2430.0,
+            "median": 2430.0,
+            "max": 2445.0
+          },
+          "clocks.mem": {
+            "min": 8001.0,
+            "median": 8001.0,
+            "max": 8001.0
+          },
+          "temperature.gpu": {
+            "min": 78.0,
+            "median": 83.0,
+            "max": 86.0
+          }
+        },
+        "busy_samples_summary": {
+          "utilization.gpu": {
+            "min": 86.0,
+            "median": 96.0,
+            "max": 99.0
+          },
+          "utilization.memory": {
+            "min": 46.0,
+            "median": 83.0,
+            "max": 92.0
+          },
+          "power.draw.average": {
+            "min": 78.15,
+            "median": 92.11,
+            "max": 96.56
+          },
+          "power.draw.instant": {
+            "min": 81.68,
+            "median": 92.03,
+            "max": 102.71
+          },
+          "enforced.power.limit": {
+            "min": 115.0,
+            "median": 115.0,
+            "max": 115.0
+          },
+          "clocks.sm": {
+            "min": 2430.0,
+            "median": 2430.0,
+            "max": 2445.0
+          },
+          "clocks.mem": {
+            "min": 8001.0,
+            "median": 8001.0,
+            "max": 8001.0
+          },
+          "temperature.gpu": {
+            "min": 78.0,
+            "median": 83.0,
+            "max": 86.0
+          }
+        },
+        "throttle_active_samples": {
+          "clocks_event_reasons.sw_power_cap": 0,
+          "clocks_event_reasons.hw_power_brake_slowdown": 0,
+          "clocks_event_reasons.sw_thermal_slowdown": 0,
+          "clocks_event_reasons.hw_thermal_slowdown": 0
+        },
+        "error": null
+      }
+    },
+    {
+      "run": "full_s8_b128_n512",
+      "batch_size": 128,
+      "output_token_cap": 512,
+      "steps_per_round": 8,
+      "baseline_output_tokens_per_s": 2790.920689942758,
+      "optimized_output_tokens_per_s": 3103.7776314020784,
+      "observed_change_percent": 11.209811249266878,
+      "matching_token_and_text_hashes": true,
+      "median_worker_round_ms": 347.7779919994646,
+      "median_scheduler_extra_ms": 0.5437110012280755,
+      "gpu_telemetry": {
+        "csv_path": "/home/pratik/Projects/Inference/minivllm/benchmarks/overlap_optimization/final/full_s8_b128_n512.gpu.csv",
+        "samples": 127,
+        "busy_samples": 126,
+        "busy_threshold_gpu_utilization_percent": 80,
+        "all_samples": {
+          "utilization.gpu": {
+            "min": 79.0,
+            "median": 100.0,
+            "max": 100.0
+          },
+          "utilization.memory": {
+            "min": 35.0,
+            "median": 86.0,
+            "max": 97.0
+          },
+          "power.draw.average": {
+            "min": 93.44,
+            "median": 95.62,
+            "max": 100.73
+          },
+          "power.draw.instant": {
+            "min": 86.18,
+            "median": 95.84,
+            "max": 112.9
+          },
+          "enforced.power.limit": {
+            "min": 115.0,
+            "median": 115.0,
+            "max": 115.0
+          },
+          "clocks.sm": {
+            "min": 2430.0,
+            "median": 2430.0,
+            "max": 2445.0
+          },
+          "clocks.mem": {
+            "min": 8001.0,
+            "median": 8001.0,
+            "max": 8001.0
+          },
+          "temperature.gpu": {
+            "min": 79.0,
+            "median": 84.0,
+            "max": 87.0
+          }
+        },
+        "busy_samples_summary": {
+          "utilization.gpu": {
+            "min": 91.0,
+            "median": 100.0,
+            "max": 100.0
+          },
+          "utilization.memory": {
+            "min": 37.0,
+            "median": 86.0,
+            "max": 97.0
+          },
+          "power.draw.average": {
+            "min": 93.44,
+            "median": 95.625,
+            "max": 100.73
+          },
+          "power.draw.instant": {
+            "min": 86.18,
+            "median": 95.845,
+            "max": 112.9
+          },
+          "enforced.power.limit": {
+            "min": 115.0,
+            "median": 115.0,
+            "max": 115.0
+          },
+          "clocks.sm": {
+            "min": 2430.0,
+            "median": 2430.0,
+            "max": 2445.0
+          },
+          "clocks.mem": {
+            "min": 8001.0,
+            "median": 8001.0,
+            "max": 8001.0
+          },
+          "temperature.gpu": {
+            "min": 79.0,
+            "median": 84.0,
+            "max": 87.0
+          }
+        },
+        "throttle_active_samples": {
+          "clocks_event_reasons.sw_power_cap": 0,
+          "clocks_event_reasons.hw_power_brake_slowdown": 0,
+          "clocks_event_reasons.sw_thermal_slowdown": 0,
+          "clocks_event_reasons.hw_thermal_slowdown": 0
+        },
+        "error": null
+      }
+    }
+  ],
+  "measured_requests": 6272,
+  "measured_output_tokens": 917504,
+  "source_sha256": {
+    "inference/executor.py": "289fe16e0f606c5d7ae00438d3a72f27c0bf9d788268b9d09689706172ed27f7",
+    "inference/scheduler/scheduler.py": "318a7659d010561efb31ae054de988a54b29f53a44b084f7965b887e9b59fe33",
+    "runtime/provider.py": "3359e64d958d647f1d06d2149f9a207de91d7f249fd24e17e6e2e54a6a60a377",
+    "lfm3/rope.py": "631ee89150073dfab708551cf3e296276a6c7b33e64ff2d8820cc65289bb5cdc"
+  },
+  "trace": {
+    "trace_path": "/tmp/minivllm_overlap_traces/profile_full_b256_n64.json",
+    "cpu_stream_flushes": 64,
+    "cpu_stream_flush_ms": 73.395136,
+    "cpu_stream_flush_overlapping_gpu_kernels_ms": 69.43679296875,
+    "overlap_fraction": 0.9460680469173053,
+    "gpu_kernel_union_ms": 3039.412703125,
+    "copies": {
+      "Memcpy HtoD (Pageable -> Device)": 294,
+      "Memcpy DtoH (Device -> Pinned)": 70,
+      "Memcpy DtoD (Device -> Device)": 4
+    },
+    "caveat": "Profiler perturbs execution. Kernel intervals are merged; overlap duration is not throughput gain."
+  },
+  "validation": {
+    "standard_passed": 195,
+    "standard_skipped": 9,
+    "local_checkpoint_passed": 3,
+    "real_engine_passed": 4,
+    "varied_real_streams_compared": 24,
+    "incremental_valid_utf8_prefixes": 1847
+  },
+  "limitations": [
+    "Engine plus validation harness, not HTTP; rates include prefill and decode.",
+    "Laptop clocks are not locked; observed changes are workload-specific, not a hardware maximum.",
+    "Larger greedy chunks produce burstier streaming and delay cancellation checks."
+  ]
+}

@@ -83,6 +83,9 @@ class ChatCompletionService:
                 max_new_tokens=self.default_max_tokens,
                 sampling=self.default_sampling,
                 decode_batch_size=int(_config_value(config, "decode_batch_size", 4)),
+                decode_steps_per_round=int(
+                    _config_value(config, "decode_steps_per_round", 1)
+                ),
                 decode_selection_window=int(
                     _config_value(config, "decode_selection_window", 8)
                 ),

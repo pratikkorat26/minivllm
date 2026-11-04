@@ -1,0 +1,10 @@
+{
+  "response_format_preserved": false,
+  "tools_preserved": false,
+  "supported_message_roles": [
+    "system",
+    "user",
+    "assistant"
+  ],
+  "finding": "JSON-schema constrained decoding and tool-call protocol fields are not implemented; extra request fields are currently ignored by the request schema."
+}

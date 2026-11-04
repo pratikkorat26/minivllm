@@ -5,6 +5,7 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from functools import partial
 from typing import AsyncIterator, Deque, Dict, Optional
 
 from inference.executor import PagedModelExecutor
@@ -35,6 +36,13 @@ class ScheduledRequest:
         return str(self.request.request_id)
 
 
+@dataclass(frozen=True)
+class PendingStreamToken:
+    online: ScheduledRequest
+    token_count: int
+    token_id: int
+
+
 class AsyncScheduler:
     def __init__(self, executor: PagedModelExecutor, config) -> None:
         self.executor = executor
@@ -53,6 +61,11 @@ class AsyncScheduler:
         self._closed = False
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="inference")
         self._prefill_turn = False
+        self._overlap_stream_emission = (
+            config.enable_stream_overlap and executor.runtime.device.type == "cuda"
+        )
+        self._pending_stream_tokens: dict[str, PendingStreamToken] = {}
+        self._stream_errors: dict[str, str] = {}
         self.last_scheduled_tokens = 0
         self.completed = self.cancelled = self.failed = 0
         self.last_prefill_batch_size = self.last_decode_batch_size = 0
@@ -178,6 +191,8 @@ class AsyncScheduler:
             self._prefill_turn = bool(self.prefill and budget <= 0)
             remaining = len(self.prefill)
             while remaining and budget > 0 and not self._closed:
+                # Do not hold text behind a potentially long prefill chunk.
+                self._flush_stream_tokens()
                 tokens, requests = await self._run_prefill(budget, remaining)
                 budget -= tokens
                 remaining -= requests
@@ -228,7 +243,10 @@ class AsyncScheduler:
 
     def _expire_or_cancel(self) -> None:
         for online in list(self.known.values()):
-            if online.cancel_requested:
+            error = self._stream_errors.pop(online.request_id, None)
+            if error is not None:
+                self._complete(online, StopReason.ERROR.value, error)
+            elif online.cancel_requested:
                 self._complete(online, StopReason.CANCELLED.value)
             elif self._expired(online.request):
                 self._complete(online, StopReason.TIMEOUT.value, "request timed out")
@@ -324,32 +342,61 @@ class AsyncScheduler:
             online.request_id: len(online.request.generated_ids) for online in selected
         }
         started = time.perf_counter()
+        loop = asyncio.get_running_loop()
+        decode = self.executor.decode
+        if self.config.decode_steps_per_round > 1 and (
+            self.decode or self.prefill or self.waiting
+        ):
+            # Keep ordinary scheduling while cohorts are still forming. Chunks
+            # only amortize host barriers for a single settled decode cohort.
+            decode = partial(decode, max_steps=1)
+        if self._pending_stream_tokens:
+            # The callback runs after GPU work is queued, before the worker
+            # waits for sampled IDs. Only the event loop touches stream queues.
+            decode = partial(
+                decode,
+                on_device_work_queued=lambda: loop.call_soon_threadsafe(
+                    self._flush_stream_tokens
+                ),
+            )
         try:
-            eligible = await asyncio.get_running_loop().run_in_executor(
+            eligible = await loop.run_in_executor(
                 self._worker,
-                self.executor.decode,
+                decode,
                 [online.request for online in selected],
             )
         except Exception as exc:
+            self._flush_stream_tokens()
             for online in selected:
                 self._complete(online, StopReason.ERROR.value, str(exc))
             return batch_tokens
         self.last_decode_batch_size = len(eligible)
+        batch_tokens = len(eligible) * self.executor.last_decode_step_count
         self.last_decode_step_latency_ms = (time.perf_counter() - started) * 1000
+        # Also flush if execution failed to invoke the notification, or the
+        # event loop has not processed it yet. Worker mutation has now stopped.
+        self._flush_stream_tokens()
         self._expire_or_cancel()
         for online in selected:
             if online.result.done():
                 continue
-            self._emit_token(online, before[online.request_id])
+            self._emit_token(online, before[online.request_id], defer=True)
             if online.request.status in ("finished", "error"):
                 self._complete(online)
             else:
                 self.decode.append(online)
         return batch_tokens
 
-    def _emit_token(self, online: ScheduledRequest, previous_count: int) -> None:
+    def _emit_token(
+        self, online: ScheduledRequest, previous_count: int, *, defer: bool = False
+    ) -> None:
         request = online.request
         if online.stream and len(request.generated_ids) > previous_count:
+            if defer and self._overlap_stream_emission and request.status == "active":
+                self._pending_stream_tokens[online.request_id] = PendingStreamToken(
+                    online, len(request.generated_ids), request.generated_ids[-1]
+                )
+                return
             text = self.executor.token_text(request)
             if text:
                 try:
@@ -370,6 +417,43 @@ class AsyncScheduler:
                         online, StopReason.ERROR.value, "stream consumer too slow"
                     )
 
+    def _flush_stream_tokens(self, request_id: Optional[str] = None) -> None:
+        """Emit immutable prefixes while the worker may append newer tokens.
+
+        Errors are retired only after the worker returns: reclaiming a request's
+        pages here could race a live forward. The pending map is bounded to one
+        token notification per active stream, never an unbounded output queue.
+        """
+        if request_id is None:
+            pending, self._pending_stream_tokens = self._pending_stream_tokens, {}
+        else:
+            snapshot = self._pending_stream_tokens.pop(request_id, None)
+            pending = {} if snapshot is None else {request_id: snapshot}
+        for snapshot in pending.values():
+            online = snapshot.online
+            if online.result.done():
+                continue
+            try:
+                text = self.executor.token_text(
+                    online.request, token_count=snapshot.token_count, finished=False
+                )
+                if not text:
+                    continue
+                if online.events.qsize() >= online.events.maxsize - 1:
+                    raise asyncio.QueueFull
+                online.events.put_nowait(
+                    StreamEvent(
+                        kind="text",
+                        text=text,
+                        token_id=snapshot.token_id,
+                        generated_token_count=snapshot.token_count,
+                    )
+                )
+            except asyncio.QueueFull:
+                self._stream_errors[online.request_id] = "stream consumer too slow"
+            except Exception as exc:
+                self._stream_errors[online.request_id] = str(exc)
+
     def _complete(
         self,
         online: ScheduledRequest,
@@ -378,6 +462,12 @@ class AsyncScheduler:
     ) -> None:
         if online.result.done():
             return
+        # Cancellation/shutdown may retire a stream before another decode.
+        # This runs only between worker calls, so reclamation remains serialized.
+        self._flush_stream_tokens(online.request_id)
+        stream_error = self._stream_errors.pop(online.request_id, None)
+        if stream_error is not None and reason is None:
+            reason, error = StopReason.ERROR.value, stream_error
         request = online.request
         if reason is not None:
             self.executor.finish(request, reason, error)

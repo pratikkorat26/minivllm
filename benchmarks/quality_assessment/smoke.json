@@ -1,0 +1,50 @@
+[
+  {
+    "id": "arithmetic",
+    "prompt": "A cafe sold 18 sandwiches at $7 each and paid $42 for ingredients. What is revenue minus ingredient cost? Answer with only the dollar amount.",
+    "text": "To find the revenue minus ingredient cost, first calculate the total revenue from selling the sandwiches. The cafe sold 18 sandwiches at $7 each:\n\n\\[\n18 \\times 7 = 126\n\\]\n\nSo, the total revenue is $126.\n\nThe ingredient cost is given as $42.\n\nNow, subtract the ingredient cost from the total revenue:\n\n\\[\n126 - 42 = 84\n\\]\n\nThus, the revenue minus ingredient cost is $84.\n\n\\boxed{84}",
+    "stop_reason": "eos",
+    "tokens": 98,
+    "error": null
+  },
+  {
+    "id": "json",
+    "prompt": "Return only a JSON object with keys name, quantity, priority. Order: Maya ordered 3 notebooks. Priority: high.",
+    "text": "{\n  \"name\": \"Maya\",\n  \"quantity\": 3,\n  \"priority\": \"high\"\n}",
+    "stop_reason": "eos",
+    "tokens": 25,
+    "error": null
+  },
+  {
+    "id": "abstain",
+    "prompt": "Answer using only this context. Project Cedar is owned by Lena and is due on June 14. What is its budget? If the context does not say, reply exactly: NOT PROVIDED",
+    "text": "NOT PROVIDED",
+    "stop_reason": "eos",
+    "tokens": 5,
+    "error": null
+  },
+  {
+    "id": "email",
+    "prompt": "Write a polite two-sentence email declining a Tuesday meeting and offering Thursday instead. Do not invent a reason. Return only the email.",
+    "text": "Subject: Meeting Reschedule\n\nThank you for the invitation. I am unable to attend the meeting on Tuesday and would prefer to meet on Thursday instead.\n\nBest regards,\n[Your Name]",
+    "stop_reason": "eos",
+    "tokens": 37,
+    "error": null
+  },
+  {
+    "id": "summary",
+    "prompt": "Summarize this incident in one sentence: A deployment at 10:00 increased checkout errors. The team rolled back at 10:12. Error rates returned to normal at 10:15. The root cause is still under investigation.",
+    "text": "A deployment at 10:00 caused checkout errors, which were rolled back at 10:12, and error rates returned to normal by 10:15, though the root cause remains under investigation.",
+    "stop_reason": "eos",
+    "tokens": 42,
+    "error": null
+  },
+  {
+    "id": "sql",
+    "prompt": "Table orders has columns customer_id, status, amount. Write SQL returning customer_id and SUM(amount) as total for paid orders, grouped by customer_id, ordered by total descending. Return only SQL.",
+    "text": "```sql\nSELECT customer_id, SUM(amount) AS total FROM table_orders WHERE status = 'paid' GROUP BY customer_id ORDER BY total DESC;\n```",
+    "stop_reason": "eos",
+    "tokens": 34,
+    "error": null
+  }
+]

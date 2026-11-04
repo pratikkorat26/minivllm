@@ -8,6 +8,8 @@ Laptop, 8 GB, SM89**.
 
 See the dated [project status](docs/status.md) for completed work, validation,
 key architectural decisions, and the next CPU-backed KV-cache objective.
+The latest [execution-overlap report](benchmarks/overlap_optimization/README.md)
+records fully warmed results, output-parity checks and GPU power telemetry.
 
 ## Implemented
 
@@ -27,6 +29,11 @@ key architectural decisions, and the next CPU-backed KV-cache objective.
   and experimental **int4 NF4** via bitsandbytes.
 - One model worker, async JSON/SSE, bounded stream buffers, disconnect handling,
   split stop-string buffering, and shutdown that joins in-flight work.
+- Streaming text emission overlaps GPU computation; sampled IDs use a reusable
+  pinned host buffer fenced by a CUDA event. Stable compiled decode cohorts
+  reuse device metadata, and incremental decoding handles Unicode tails.
+- Optional exact greedy decode chunks reduce host synchronization. The default
+  is one step per round; larger chunks trade streaming cadence for throughput.
 - TTFT/TPOT, scheduler/KV metrics, saved GPU measurements, independent reference tests.
 
 **Fused paged attention is experimental and opt-in.** Set
@@ -88,6 +95,16 @@ weight reads when serving concurrent requests. Different BF16 GEMM shapes can
 change near-tied greedy token choices, so this option is explicit. Its measured
 throughput and recommended batch settings are in [benchmarks](benchmarks/README.md).
 
+For optional exact greedy chunks, add
+`--decode-steps-per-round 8 --temperature 0 --repetition-penalty 1` to the compiled
+server command. The equivalent environment setting is
+`LFM3_API_DECODE_STEPS_PER_ROUND=8`. **S8 means up to eight ordinary sequential
+decode steps before copying token IDs to the CPU**, using the actual preceding
+argmax each time. It does not use a draft model or guessed tokens. Pending prefill,
+waiting requests, other decode cohorts or history-dependent sampling retain the
+single-step path. Streaming becomes burstier and cancellation checks happen
+between rounds. See [execution and ownership](docs/architecture.md#optional-exact-greedy-chunks).
+
 ### Quantization
 
 `--quantization` (or `LFM3_API_QUANTIZATION`) accepts:
@@ -135,17 +152,44 @@ flowchart LR
    for reusable pages when the generic prefix cache is enabled.
 4. Each tick runs a decode cohort, then prefills using the remaining token budget.
    If decode consumes the budget, the next turn serves prefill.
-5. The worker builds metadata, writes KV and conv state, runs attention and
-   samples. Sampled IDs are copied to CPU once per batch. Compatible prefill
-   chunks can share a forward when prefill batching is enabled.
-6. JSON resolves the future; SSE consumes a bounded event queue. Completion,
-   cancellation, timeout and errors release request references.
+5. The worker prepares or reuses metadata, updates KV and conv state, and samples.
+   Sampled IDs transfer once per batch or bounded greedy chunk. Compatible
+   prefill chunks can share a forward when prefill batching is enabled.
+6. While the worker waits for its CUDA event, the event loop decodes and emits
+   the previous immutable text prefix. JSON resolves a future; SSE consumes a
+   bounded event queue. Cancellation and stream errors retire after worker
+   completion so they cannot reclaim pages used by a live forward.
 
 The synchronous executor contains no asyncio. Model/KV mutation never overlaps;
 HTTP handlers can run during model steps. See [architecture](docs/architecture.md),
 the [pre-change audit](docs/audit.md), and the [study guide](docs/study.md).
 
 ## Measurements
+
+### Execution overlap (Linux, November 3, 2026)
+
+Fully warmed BF16 runs on the RTX 4070 Laptop 8 GB, with compilation, a
+2,048-token budget, equal-length prefill batching and custom paged attention off:
+
+| Streaming workload | Features disabled | Default S1 overlap | Optional greedy S8 |
+|---|---:|---:|---:|
+| 256 requests, 64-token output cap | 4,813 | 5,016 (+4.2%) | **5,250 (+9.1%)** |
+| 128 requests, 512-token output cap | 2,791 | 2,990 (+7.1%) | **3,104 (+11.2%)** |
+
+Rates are aggregate **output tokens/s**, including prefill, scheduling and the
+streaming validation harness; they are not single-conversation or HTTP rates.
+Warmup continues until two consecutive request waves add no compiled graph or
+CUDA graph capture. Every measured wave rechecks those counters. All compared
+token/text hashes matched across 6,272 measured requests and 917,504 output tokens.
+A diagnostic trace showed 94.6% of recorded streaming-emission work overlapping
+GPU kernels. Performance mode was verified and power/temperature recorded;
+clocks were not locked. These are workload-specific observations.
+
+S1 is the default. S8 queues up to eight exact greedy steps and produces larger
+text bursts, with roughly 0.3-second rounds in the batch-256 run. Full configs,
+raw waves, power telemetry, validation and commands are in the
+[overlap report](benchmarks/overlap_optimization/README.md) and
+[machine-readable summary](benchmarks/overlap_optimization/summary.json).
 
 ### Linux software optimization pass (November 2026)
 
@@ -164,8 +208,10 @@ end-to-end throughput. See [raw results, methodology, and commands](benchmarks/R
 
 ### LFM3 model memory
 
-LFM3-1.7B BF16 generation peaks at about **3.32 GiB** allocated for model,
-KV cache and live temporaries on the 8 GB laptop GPU. int8 reduces the resident
+An earlier small-workload LFM3-1.7B BF16 run peaked at about **3.32 GiB** allocated
+for model, KV cache and live temporaries. Peak memory depends on KV reservations,
+batch size and compiled graphs; the current overlap runs peak around **4.62–5.35
+GiB** allocated. int8 reduces the resident
 model allocation from 3.22 GiB to 1.87 GiB; int4 to 1.22 GiB. These are
 `torch.cuda.memory_allocated`/`max_memory_allocated` values, not total VRAM or
 allocator reservation.
@@ -275,7 +321,7 @@ The corresponding int8 sweep recorded 18.20 tokens/s at concurrency 1, 40.89 at
 4, 47.26 at 8, 50.20 at 16 and 51.99 at 32. Int8 saved memory but was much slower
 than BF16 in this implementation; no int4 throughput claim is made.
 
-Latest full WSL test run: **157 passed, 7 skipped**. Local real-checkpoint
+Historical full WSL test run: **157 passed, 7 skipped**. Local real-checkpoint
 serial/batched/streaming/chunked tests also passed with fused paged decode enabled.
 
 The historical engine sweep below was collected on Gemma 270M **before** the
@@ -314,6 +360,14 @@ No relative vLLM performance is claimed.
 
 ## Validate
 
+Latest Linux/CUDA validation: **195 passed, 9 skipped**, plus three local-checkpoint
+tests and four real-engine regressions in separate processes. Twenty-four varied
+real streamed outputs matched baseline IDs, text and stop reasons across disabled
+features, default overlap and greedy chunks. See the
+[output-quality audit](benchmarks/quality_assessment/README.md) for the model's
+task and instruction-following limitations; parity checks do not establish
+general production reliability.
+
 ```bash
 python -m pytest -q
 python -m ruff check inference lfm3 app adapters scripts
@@ -341,7 +395,7 @@ serial/batched, streamed, chunked and cached paths.
 
 Settings use the `LFM3_API_*` prefix. Main controls:
 `MODEL_ID`, `QUANTIZATION`, `COMPILE_MODEL`, `MAX_BATCH_TOKENS`,
-`PREFILL_CHUNK_SIZE`, `DECODE_BATCH_SIZE`, `MAX_CONCURRENT_REQUESTS`,
+`PREFILL_CHUNK_SIZE`, `DECODE_BATCH_SIZE`, `DECODE_STEPS_PER_ROUND`, `MAX_CONCURRENT_REQUESTS`,
 `MAX_QUEUE_SIZE`, `MAX_KV_CACHE_TOKENS`, `KV_BLOCK_SIZE`, `NUM_KV_BLOCKS`,
 `REQUEST_TIMEOUT_S`, `ENABLE_PREFIX_CACHE`, `ENABLE_PREFILL_BATCHING`.
 `max_queue_size` bounds **all outstanding requests**,
@@ -354,10 +408,11 @@ positions. Generation results expose `ttft_s` and `tpot_s`; benchmarks save raw
 per-request observations.
 
 Reservation reduces admission density and causes FIFO head-of-line blocking, but
-guarantees progress without preemption. Small chunks bound decode interference
-but add launches. Dense gather remains O(context) traffic even on sliding layers.
-Sliding layers still reserve full KV storage in this version. Tokenization is
-synchronous; streaming detokenizes accumulated IDs for Unicode correctness.
+guarantees progress without preemption. Small prefill chunks bound decode
+interference but add launches. Full-attention gather remains O(context) traffic;
+sliding layers bound reads to their window and current chunk while still reserving
+full KV storage. Tokenization is synchronous. Streaming uses incremental decoding
+when supported, with full-prefix fallback and a completion flush for Unicode tails.
 Non-streaming stop strings trim completed output rather than stopping computation
 early. HTTP body limits currently rely on Content-Length plus schema limits.
 

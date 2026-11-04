@@ -1,0 +1,51 @@
+{
+  "revision": "ac2586a34f1a1c03329dbdcdefabd8b6478ddaa7",
+  "missing": [
+    "lm_head.weight"
+  ],
+  "unexpected": [],
+  "rows": [
+    {
+      "id": "arithmetic",
+      "reference_text": "To find the revenue minus ingredient cost, first calculate the total revenue from selling the sandwiches. The cafe sold 18 sandwiches at $7 each, so the total revenue is:\n\n\\[\n18 \\times 7 = 126\n\\]\n\nNext, subtract the ingredient cost of $42 from the total revenue:\n\n\\[\n126 - 42 = 84\n\\]\n\nThus, the revenue minus ingredient cost is $84.\n\n\\boxed{84}",
+      "native_text": "To find the revenue minus ingredient cost, first calculate the total revenue from selling the sandwiches. The cafe sold 18 sandwiches at $7 each:\n\n\\[\n18 \\times 7 = 126\n\\]\n\nSo, the total revenue is $126.\n\nThe ingredient cost is given as $42.\n\nNow, subtract the ingredient cost from the total revenue:\n\n\\[\n126 - 42 = 84\n\\]\n\nThus, the revenue minus ingredient cost is $84.\n\n\\boxed{84}",
+      "same_text": false,
+      "tokens": 89
+    },
+    {
+      "id": "json",
+      "reference_text": "{\n  \"name\": \"Maya\",\n  \"quantity\": 3,\n  \"priority\": \"high\"\n}",
+      "native_text": "{\n  \"name\": \"Maya\",\n  \"quantity\": 3,\n  \"priority\": \"high\"\n}",
+      "same_text": true,
+      "tokens": 25
+    },
+    {
+      "id": "abstain",
+      "reference_text": "NOT PROVIDED",
+      "native_text": "NOT PROVIDED",
+      "same_text": true,
+      "tokens": 5
+    },
+    {
+      "id": "email",
+      "reference_text": "Subject: Meeting Reschedule\n\nThank you for the invitation. I am unable to attend the meeting on Tuesday and would prefer to meet on Thursday instead.\n\nBest regards,\n[Your Name]",
+      "native_text": "Subject: Meeting Reschedule\n\nThank you for the invitation. I am unable to attend the meeting on Tuesday and would prefer to meet on Thursday instead.\n\nBest regards,\n[Your Name]",
+      "same_text": true,
+      "tokens": 37
+    },
+    {
+      "id": "summary",
+      "reference_text": "A deployment at 10:00 caused checkout errors, which were rolled back at 10:12, and error rates returned to normal by 10:15, though the root cause remains under investigation.",
+      "native_text": "A deployment at 10:00 caused checkout errors, which were rolled back at 10:12, and error rates returned to normal by 10:15, though the root cause remains under investigation.",
+      "same_text": true,
+      "tokens": 42
+    },
+    {
+      "id": "sql",
+      "reference_text": "```sql\nSELECT customer_id, SUM(amount) AS total FROM table_orders WHERE status = 'paid' GROUP BY customer_id ORDER BY total DESC;\n```",
+      "native_text": "```sql\nSELECT customer_id, SUM(amount) AS total FROM table_orders WHERE status = 'paid' GROUP BY customer_id ORDER BY total DESC;\n```",
+      "same_text": true,
+      "tokens": 34
+    }
+  ]
+}

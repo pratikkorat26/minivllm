@@ -1,0 +1,97 @@
+[
+  {
+    "id": "sql_schema",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a precise data-processing assistant. Follow the requested output format exactly. Do not include Markdown fences, explanations, or reasoning. Use schema identifiers verbatim."
+      },
+      {
+        "role": "user",
+        "content": "SQLite schema:\nCREATE TABLE orders (customer_id INTEGER, status TEXT, amount INTEGER);\nReturn only a SELECT query for total paid amount per customer, with columns customer_id and total, ordered by total descending. Use the exact table name orders."
+      }
+    ],
+    "text": "SELECT customer_id, SUM(amount) AS total FROM orders GROUP BY customer_id ORDER BY total DESC;\n```",
+    "stop_reason": "eos",
+    "grade": {
+      "automatic": true,
+      "pass_strict": false,
+      "query_correct": false,
+      "error": "You can only execute one statement at a time.",
+      "format_correct": false
+    },
+    "diagnostic_after_removing_stray_markdown": {
+      "result": [
+        [
+          1,
+          150
+        ],
+        [
+          3,
+          99
+        ],
+        [
+          2,
+          25
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          50
+        ],
+        [
+          2,
+          25
+        ]
+      ],
+      "issue": "Missing WHERE status = paid; removing Markdown does not repair the SQL semantics."
+    }
+  },
+  {
+    "id": "math_json",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a precise data-processing assistant. Follow the requested output format exactly. Do not include Markdown fences, explanations, or reasoning. Use schema identifiers verbatim."
+      },
+      {
+        "role": "user",
+        "content": "A cafe sold 18 sandwiches at $7 each and paid $42 for ingredients. Return only JSON with a single integer field amount containing revenue minus ingredient cost."
+      }
+    ],
+    "text": "{\n  \"amount\": (18 * 7) - 42\n}\nWe need to compute: Revenue = number of sandwiches * price per sandwich = 18 * 7 = 126. Ingredient cost = 42. So amount = revenue - ingredient cost = 126 - 42 = 84.\n\nThus return {\"amount\": 84}. But they said \"Return only JSON with a single integer field amount\". So just the JSON object? Probably like {\"amount\": 84}.\n\nLet's produce that.</think>{\n  \"amount\": 84\n}",
+    "stop_reason": "eos",
+    "grade": {
+      "automatic": true,
+      "pass_strict": false
+    }
+  },
+  {
+    "id": "multi_turn_strict",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a precise data-processing assistant. Follow the requested output format exactly. Do not include Markdown fences, explanations, or reasoning. Use schema identifiers verbatim."
+      },
+      {
+        "role": "user",
+        "content": "My name is Rina and I am traveling to Osaka."
+      },
+      {
+        "role": "assistant",
+        "content": "Understood, Rina. Your destination is Osaka."
+      },
+      {
+        "role": "user",
+        "content": "Return only a JSON object with name and destination. No code fences."
+      }
+    ],
+    "text": "{\n  \"name\": \"Rina\",\n  \"destination\": \"Osaka\"\n}",
+    "stop_reason": "eos",
+    "grade": {
+      "automatic": true,
+      "pass_strict": true
+    }
+  }
+]

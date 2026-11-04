@@ -1,6 +1,10 @@
-# Project status — November 1, 2026
+# Project status — updated November 3, 2026
 
-## Completed: PyTorch throughput optimization
+Latest: execution overlap and optional exact greedy chunks are implemented and
+validated. The November 3 record below contains the current results; earlier
+sections preserve their original workloads and validation counts.
+
+## November 1: PyTorch throughput optimization
 
 The software optimization pass is implemented and benchmarked with real
 `LiquidAI/LFM3-1.7B` BF16 weights on an RTX 4070 Laptop 8 GB, using Python 3.12.16
@@ -63,7 +67,7 @@ ownership in more detail. Model/KV mutation stays serialized on one worker.
 BF16 GEMM shapes and reduction orders can change near-tied greedy choices;
 prefill batching and compilation are explicit performance options.
 
-## Validation record
+## November 1 validation record
 
 - GPU suite: 178 passed, 9 skipped after adding the compilation-scope check.
 - Local-checkpoint suite: 3 passed, including batched/serial prefill-logit tolerance.
@@ -89,3 +93,61 @@ KV pages and convolution state. Extra RAM does not extend the model's configured
 state snapshots can be restored with matching KV history.
 
 No CPU-offload throughput, HTTP capacity, or vLLM comparison is claimed here.
+
+## November 2 follow-up: execution timing and overlap
+
+The [execution timing investigation](../benchmarks/execution_timing/README.md)
+separates actual GPU copy duration from CPU waits for GPU completion. Transfers
+are small relative to the GPU kernels; a blocking sampled-ID copy is largely
+waiting for its preceding forward, not moving data over PCIe.
+
+The RoPE fix canonicalizes CUDA device aliases so compiled steps
+reuse their caches. Compiled preparation restores the configured cache precision
+once; eager precision behavior is preserved. Fixed-work paired decode medians
+were 51.40 to 52.11 output tokens/s for one 8,118-token prompt, and 6,538 to 6,563
+aggregate tokens/s for batch 256 short prompts. Short-context changes are within
+noise; these microbenchmarks exclude prefill and scheduler overhead and should
+not replace the serving-throughput table above. All paired token hashes match.
+
+After the scoped fix, the standard GPU suite passed 180 tests (9 skipped), the
+local-checkpoint suite passed 3, and the real-engine suite passed 4. No speculative
+decoding, custom kernels, or concurrent mutation of model/KV state was added.
+
+Real engine timing identifies CPU text emission as a possible next overlap
+target: batch 256 has a roughly 40 ms worker step, plus median scheduler time of
+0.39 ms without streaming or 2.15 ms with streaming. Actual GPU copies take
+about 0.004 ms per batched step. Any expected gain from overlapping emission is
+small at this investigation stage; the measurements did not justify adding copy
+streams merely to hide these transfers. The subsequent implementation is recorded
+below.
+
+## November 3: implemented execution overlap
+
+The worker now queues GPU computation and a pinned sampled-ID copy before the
+event loop emits the previous immutable text prefix. A CUDA event fences host
+reads and buffer reuse. Stream errors and cancellation release pages after the
+worker returns. A bounded metadata cache avoids repeated uploads for stable
+compiled decode cohorts, and native incremental decoding avoids repeatedly
+decoding the full generated history.
+
+Optional `decode_steps_per_round` chains exact greedy steps before one host
+transfer and bulk history update. Its default is one. Eight-step rounds require
+compilation, temperature zero, repetition penalty 1 and a settled cohort; budgets,
+reservations and context cap each chunk. This trades finer streaming cadence and
+cancellation granularity for throughput. No speculative decoding is involved.
+
+<!-- overlap-final-results:start -->
+Final warmed streaming measurements: batch 256 with a 64-token output cap improved from 4,813 to 5,250 aggregate output tokens/s (+9.1%) with exact greedy S8. Batch 128 with a 512-token output cap improved from 2,791 to 3,104 tokens/s (+11.2%). All compared token/text hashes match; no compilation or capture occurred during measurement. Rates include prefill and the streaming harness. See the [overlap report](../benchmarks/overlap_optimization/README.md) for default S1 results, power telemetry, cadence tradeoffs and reproduction commands.
+<!-- overlap-final-results:end -->
+
+Validation: 195 standard tests passed (9 skipped), local checkpoint tests 3
+passed, real-engine regressions 4 passed. Twenty-four varied real streams matched
+baseline token IDs, text and stop reasons, including seeded sampling and early
+completion. Native incremental decoding matched 1,847 valid UTF-8 prefixes across
+56 saved/text cases.
+
+The laptop's supported performance profile is selected on AC. Benchmarks verify
+it before loading and measuring, reject changes during a run, and record GPU
+power, clocks, temperature and throttling reasons. The GPU power limit is not
+raised. The implementation, validation code and raw measurements are recorded
+together in this repository.

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Set, Union
+from typing import Callable, List, Optional, Set, Union
 
 import torch
 
@@ -58,6 +58,14 @@ class EngineStats:
 
 
 @dataclass
+class StreamingTextState:
+    decode: Callable[[List[int]], str]
+    consumed_tokens: int = 0
+    emitted_chars: int = 0
+    pending_text: str = ""
+
+
+@dataclass
 class RequestState:
     request_id: Union[int, str]
     prompt_token_ids: List[int]
@@ -81,6 +89,7 @@ class RequestState:
     first_token_at_s: Optional[float] = None
     last_token_at_s: Optional[float] = None
     emitted_text: str = ""
+    streaming_text: Optional[StreamingTextState] = field(default=None, repr=False)
     finished_at_s: Optional[float] = None
     prefill_time_s: float = 0.0
     prefill_steps: int = 0

@@ -5,6 +5,13 @@ from config.settings import RuntimeSettings, ServerSettings, parse_settings
 
 
 class RuntimeConfigTests(unittest.TestCase):
+    def test_decode_steps_cli_overrides_environment(self):
+        settings = parse_settings(
+            argv=["--decode-steps-per-round", "8"],
+            env={"LFM3_API_DECODE_STEPS_PER_ROUND": "2"},
+        )
+        self.assertEqual(settings.runtime.decode_steps_per_round, 8)
+
     def test_defaults_use_loopback_host(self):
         settings = parse_settings(argv=[], env={})
 

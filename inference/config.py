@@ -32,6 +32,7 @@ class EngineConfig:
     max_new_tokens: int = 180
     sampling: SamplingConfig = field(default_factory=SamplingConfig)
     decode_batch_size: int = 4
+    decode_steps_per_round: int = 1
     decode_selection_window: int = 8
     max_queue_size: int = 128
     max_concurrent_requests: int = 16
@@ -42,12 +43,17 @@ class EngineConfig:
     num_kv_blocks: Optional[int] = None
     prefill_chunk_size: Optional[int] = None
     enable_prefill_batching: bool = False
+    enable_stream_overlap: bool = True
+    enable_decode_metadata_cache: bool = True
+    enable_pinned_token_copy: bool = True
+    enable_incremental_detokenization: bool = True
     enable_prefix_cache: bool = False
     max_prefix_cache_entries: int = 64
 
     def __post_init__(self):
         for name in (
             "decode_batch_size",
+            "decode_steps_per_round",
             "decode_selection_window",
             "max_queue_size",
             "max_concurrent_requests",

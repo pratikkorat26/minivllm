@@ -1,0 +1,94 @@
+{
+  "method": "The two observed function bodies were reviewed and allowlisted before execution with only the set builtin exposed.",
+  "tests": [
+    {
+      "input": [],
+      "expected": []
+    },
+    {
+      "input": [
+        3,
+        1,
+        3,
+        2,
+        1
+      ],
+      "expected": [
+        3,
+        1,
+        2
+      ]
+    },
+    {
+      "input": [
+        "a",
+        "a",
+        "b"
+      ],
+      "expected": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "input": [
+        null,
+        null,
+        "x"
+      ],
+      "expected": [
+        null,
+        "x"
+      ]
+    },
+    {
+      "input": [
+        false,
+        0,
+        1,
+        true
+      ],
+      "expected": [
+        false,
+        1
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "mode": "eager_greedy",
+      "functional_tests_passed": 5,
+      "functional_tests_total": 5,
+      "plain_code_format": false,
+      "implementation": "set membership, expected linear time"
+    },
+    {
+      "mode": "default_sampling",
+      "functional_tests_passed": 5,
+      "functional_tests_total": 5,
+      "plain_code_format": false,
+      "implementation": "list membership, quadratic worst case"
+    },
+    {
+      "mode": "recommended_sampling",
+      "functional_tests_passed": 5,
+      "functional_tests_total": 5,
+      "plain_code_format": false,
+      "implementation": "set membership, expected linear time"
+    },
+    {
+      "mode": "optimized_greedy",
+      "functional_tests_passed": 5,
+      "functional_tests_total": 5,
+      "plain_code_format": false,
+      "implementation": "set membership, expected linear time"
+    },
+    {
+      "mode": "reference_greedy",
+      "functional_tests_passed": 5,
+      "functional_tests_total": 5,
+      "plain_code_format": false,
+      "implementation": "set membership, expected linear time"
+    }
+  ]
+}

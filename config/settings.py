@@ -29,6 +29,7 @@ class RuntimeSettings:
     top_k: int = 50
     repetition_penalty: float = 1.1
     decode_batch_size: int = 4
+    decode_steps_per_round: int = 1
     decode_selection_window: int = 8
     max_queue_size: int = 128
     max_concurrent_requests: int = 16
@@ -134,6 +135,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--top-k", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--repetition-penalty", type=float, default=argparse.SUPPRESS)
     parser.add_argument("--decode-batch-size", type=int, default=argparse.SUPPRESS)
+    parser.add_argument(
+        "--decode-steps-per-round", type=int, default=argparse.SUPPRESS,
+        help="Greedy decode steps between scheduler checks; larger values trade latency for throughput",
+    )
     parser.add_argument("--decode-selection-window", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--max-queue-size", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--max-concurrent-requests", type=int, default=argparse.SUPPRESS)
@@ -211,6 +216,12 @@ def load_settings_from_env(env: Mapping[str, str] = os.environ) -> Settings:
                 "decode_selection_window",
                 int,
                 runtime_defaults.decode_selection_window,
+            ),
+            decode_steps_per_round=_from_env(
+                env,
+                "decode_steps_per_round",
+                int,
+                runtime_defaults.decode_steps_per_round,
             ),
             max_queue_size=_from_env(
                 env,
@@ -327,6 +338,11 @@ def parse_settings(
             args,
             "decode_selection_window",
             settings.runtime.decode_selection_window,
+        ),
+        decode_steps_per_round=_override(
+            args,
+            "decode_steps_per_round",
+            settings.runtime.decode_steps_per_round,
         ),
         max_queue_size=_override(args, "max_queue_size", settings.runtime.max_queue_size),
         max_concurrent_requests=_override(

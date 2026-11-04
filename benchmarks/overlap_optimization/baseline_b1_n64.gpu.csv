@@ -1,0 +1,12 @@
+timestamp,pstate,utilization.gpu,utilization.memory,power.draw.average,power.draw.instant,enforced.power.limit,clocks.sm,clocks.mem,temperature.gpu,clocks_event_reasons.sw_power_cap,clocks_event_reasons.hw_power_brake_slowdown,clocks_event_reasons.sw_thermal_slowdown,clocks_event_reasons.hw_thermal_slowdown
+2026/11/02 22:55:21.349, P0, 96, 100, 77.86, 77.65, 115.00, 2460, 8001, 67, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:55:21.857, P0, 96, 100, 77.86, 77.65, 115.00, 2460, 8001, 68, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:55:22.357, P0, 97, 100, 77.84, 78.23, 115.00, 2460, 8001, 68, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:55:22.858, P0, 96, 100, 78.10, 78.10, 115.00, 2460, 8001, 68, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:55:23.358, P0, 97, 100, 78.14, 77.91, 115.00, 2460, 8001, 68, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:55:23.858, P0, 96, 100, 78.18, 78.58, 115.00, 2460, 8001, 68, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:55:24.358, P0, 97, 100, 78.21, 78.58, 115.00, 2460, 8001, 68, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:55:24.858, P0, 96, 100, 78.27, 78.56, 115.00, 2460, 8001, 68, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:55:25.359, P0, 96, 100, 78.16, 78.25, 115.00, 2460, 8001, 68, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:55:25.859, P0, 96, 100, 78.26, 77.72, 115.00, 2460, 8001, 69, Not Active, Not Active, Not Active, Not Active
+2026/11/02 22:55:26.359, P0, 96, 100, 78.31, 78.53, 115.00, 2460, 8001, 69, Not Active, Not Active, Not Active, Not Active

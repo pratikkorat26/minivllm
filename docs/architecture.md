@@ -37,6 +37,8 @@ flowchart TD
 Each tick expires/cancels all known requests and admits FIFO while capacity permits.
 Decode selects the oldest request's sampling cohort, capped by batch size and
 `max_batch_tokens`. Sequence lengths may differ; every decode input is one token.
+The default round executes one step; optional settled-cohort greedy chunks
+charge `eligible_requests * steps` against that same budget.
 Remaining budget serves one chunk from each queued prefill, in round-robin order.
 When decode exhausts the budget while prefill waits, the next tick reserves a
 prefill turn. With `enable_prefill_batching`, the oldest chunk anchors a batch
@@ -91,7 +93,7 @@ each before any further allocator/model mutation. HTTP and request submission ca
 run during execution. Tokenization/admission still run on the event loop. Handoff
 adds overhead; its purpose is responsiveness, not single-request speed.
 
-The executor transfers a batch block-table tensor and a length vector, passing a
+The executor prepares or reuses a batch block-table tensor and length vector, passing a
 CPU-known maximum sequence length through all layers. There are no per-layer
 sequence-scalar reads in the engine path. RoPE indexes positions for all rows at
 once. KV gather produces `[B, G, S, D]` with batch indexing; right-padding reads
@@ -114,7 +116,7 @@ In compiled single-token decode, short convolutions use an FP32 dot product
 over the recurrent state and new input, allowing pointwise fusion. Eager and
 multi-token execution retain the general depthwise convolution.
 Inference mode is used, final-position logits are `[B,1,V]`, and
-sampled decode IDs transfer to CPU once per batch. Intermediate prefill chunks
+sampled decode IDs transfer to CPU once per batch or bounded greedy chunk. Intermediate prefill chunks
 skip vocabulary projection.
 
 CUDA BF16 and CPU FP32 are supported without Hopper-specific instructions. The
@@ -125,8 +127,13 @@ the matmul. int4 uses bitsandbytes NF4 and is experimental.
 Opt-in `torch.compile(mode="reduce-overhead")` owns CUDA graph capture/replay.
 The executor marks persistent KV and convolution buffers as static-address inputs
 and buckets decode batch/context sizes. RoPE buffers grow eagerly before compiled
-execution so graph-pool outputs cannot become persistent cache storage. The runtime
-wraps the compiled forward with a 32-entry specialization budget: prefill/decode
+execution so graph-pool outputs cannot become persistent cache storage. RoPE
+canonicalizes the current CUDA device alias before comparing cache locations;
+`cuda` and `cuda:0` must reuse the same buffers. Compiled preparation restores the
+configured RoPE cache dtype once after model conversion, preserving the precision
+of the previous compiled rebuild path. Ordinary eager execution retains its prior
+buffer precision. The cache then changes only for growth or device migration.
+The runtime wraps the compiled forward with a 32-entry specialization budget: prefill/decode
 phase and shape variations otherwise exhausted the default eight entries and
 triggered eager fallback. The configuration patch is restored after every call,
 including failures. Compilation remains experimental; warmup and capture costs
@@ -139,10 +146,59 @@ on the device; duplicate IDs receive the penalty once. Logits are copied only
 when the penalty will mutate them. A completed prefill batch, like decode, copies
 sampled IDs to the CPU once before updating per-request state.
 
+### Overlap and stable decode metadata
+
+The worker queues forward, sampling, and a non-blocking copy into a reusable
+pinned host buffer. A CUDA event fences the buffer before the worker reads it.
+Once device work is queued, a notification lets the event loop emit the previous
+step's text while the worker waits. Only the event loop owns stream queues and
+decoder state; only the worker advances model, KV, and convolution state.
+
+Pending emission holds an immutable token-prefix length and token ID, with at
+most one notification per active stream. The worker may append a newer suffix;
+emission reads only the captured prefix. Slow-consumer errors are deferred until
+the worker returns, so a callback never reclaims pages used by a live forward.
+Final tokens and pending text flush before the terminal event. Pending text also
+flushes before a long prefill rather than waiting behind it.
+
+A single metadata cache entry covers the most recent compiled decode cohort.
+Request order, complete page mappings, padded shape, convolution slots and the
+expected next sequence lengths must match before reuse. Stable block tables and
+slot IDs stay on the device; active lengths increment on the worker's stream,
+while padded lengths remain zero. Any mismatch reconstructs the tensors. This
+removes synchronous metadata uploads from consecutive stable steps.
+
+The LFM3 tokenizer optionally supplies a native incremental decoder. Each stream
+feeds only newly generated IDs, preserves UTF-8 tails, and tracks emitted
+character count. Completion performs one full decode to flush an unfinished
+tail. Generic tokenizers and older tokenizers releases retain full-prefix
+decoding. This avoids repeated full-history decoding during long outputs.
+
+### Optional exact greedy chunks
+
+`decode_steps_per_round` defaults to one. With compilation, greedy sampling and
+repetition penalty 1, a larger value chains ordinary autoregressive GPU outputs
+before one sampled-ID transfer and host commit. Every next input is the actual
+preceding argmax; there is no draft model or token prediction shortcut. Host
+history updates commit each row in bulk without intermediate GPU tensor views.
+
+Chunks run only for a settled single cohort. Waiting requests, pending prefill or
+another decode cohort retain one-step scheduling. The chunk is capped by the
+shared token budget, every request's remaining output reservation, and the model
+context limit. Private EOS rows may execute unused positions until the chunk
+ends; output and history stop at the first EOS, and pages release after the
+device event completes. Other sampling configurations use one step.
+
+Larger chunks trade more throughput for burstier text events and later
+cancellation checks. First-to-last token timing averages do not describe that
+cadence. See the [overlap measurements](../benchmarks/overlap_optimization/README.md)
+for tested settings, power telemetry and reproduction commands.
+
 ## Lifecycle and serving
 
 Internal futures are shielded from caller cancellation. Abort/timeout runs between
-steps; launched kernels finish. Initialization/execution errors resolve requests
+scheduling rounds; a configured greedy chunk can contain several steps, and
+launched kernels finish. Initialization/execution errors resolve requests
 and release pages. All known requests, including buried waiting requests, are
 checked for expiry each tick.
 
@@ -152,7 +208,7 @@ through adapter/app/engine. Non-streaming HTTP polls for disconnect while awaiti
 completion. Shutdown stops admission, marks requests cancelled, joins the scheduler
 and worker, then clears cache references.
 
-Accumulated token IDs are detokenized to handle Unicode tails. Stop-string prefix
+Incremental or accumulated token decoding handles Unicode tails. Stop-string prefix
 suffixes are held until safe to emit. EOS is omitted from text but included in usage.
 
 ## Metrics and limits

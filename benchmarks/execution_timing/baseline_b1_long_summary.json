@@ -1,0 +1,1491 @@
+{
+  "kind": "fixed_work_executor_decode_profile",
+  "git_commit": "cb3761f56e4cee3707f409a62dcec5945c96cbca",
+  "device": "NVIDIA GeForce RTX 4070 Laptop GPU",
+  "torch": "2.15.0+cu132",
+  "batch_size": 1,
+  "context": "long",
+  "prompt_tokens": 8118,
+  "steps": 32,
+  "repeats": 5,
+  "eos_disabled_for_fixed_work": true,
+  "timings": [
+    {
+      "wall_s": 0.6201368670008378,
+      "device_envelope_s": 0.6201275634765625,
+      "tokens": 32,
+      "tokens_per_s": 51.601512025500604
+    },
+    {
+      "wall_s": 0.6220553319999453,
+      "device_envelope_s": 0.62204833984375,
+      "tokens": 32,
+      "tokens_per_s": 51.44236911709779
+    },
+    {
+      "wall_s": 0.6234598259998165,
+      "device_envelope_s": 0.6234527587890625,
+      "tokens": 32,
+      "tokens_per_s": 51.32648274278609
+    },
+    {
+      "wall_s": 0.6234277540006588,
+      "device_envelope_s": 0.62342041015625,
+      "tokens": 32,
+      "tokens_per_s": 51.32912321379614
+    },
+    {
+      "wall_s": 0.6225941789998615,
+      "device_envelope_s": 0.6225864868164063,
+      "tokens": 32,
+      "tokens_per_s": 51.39784642928234
+    }
+  ],
+  "median_tokens_per_s": 51.39784642928234,
+  "identical_token_hashes": true,
+  "token_hashes": [
+    "ec5b7fb312a2420af732d5a4187721557d87108c0df38d9f863babbb8627875b",
+    "ec5b7fb312a2420af732d5a4187721557d87108c0df38d9f863babbb8627875b",
+    "ec5b7fb312a2420af732d5a4187721557d87108c0df38d9f863babbb8627875b",
+    "ec5b7fb312a2420af732d5a4187721557d87108c0df38d9f863babbb8627875b",
+    "ec5b7fb312a2420af732d5a4187721557d87108c0df38d9f863babbb8627875b"
+  ],
+  "rope_cache_variant": "baseline",
+  "trace_path": "/tmp/minivllm_execution_traces/baseline_b1_long_trace.json",
+  "trace": {
+    "categories": {
+      "user_annotation": 64,
+      "cpu_op": 1248,
+      "overhead": 1,
+      "gpu_memcpy": 80,
+      "cuda_runtime": 418,
+      "kernel": 4768,
+      "gpu_memset": 352,
+      "gpu_user_annotation": 64,
+      "Trace": 1
+    },
+    "gpu_activity_span_ms": 315.704787109375,
+    "gpu_busy_ms": 300.79310498046874,
+    "gpu_idle_gap_ms": 14.91168212890625,
+    "gpu_busy_fraction": 0.9527670065904318,
+    "gpu_kernel_ms": 300.165008,
+    "gpu_copy_ms": 0.43347700000000006,
+    "copy_kernel_overlap_ms": 0.0,
+    "copies": [
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.44,
+        "args": {
+          "External id": 3,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 7,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.005555555555555556,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 1.377,
+        "args": {
+          "External id": 11,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 27,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 5.949164851125635,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.896,
+        "args": {
+          "External id": 19,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 45,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.008928571428571428,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.864,
+        "args": {
+          "External id": 27,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 63,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.009259259259259259,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 1.248,
+        "args": {
+          "External id": 80,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 230,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00641025641025641,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.28,
+        "args": {
+          "External id": 85,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 243,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00625,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.608,
+        "args": {
+          "External id": 93,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 263,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 13.473684210526315,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.32,
+        "args": {
+          "External id": 101,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 281,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.32,
+        "args": {
+          "External id": 109,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 299,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 57.824,
+        "args": {
+          "External id": 162,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 466,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.0001383508577753182,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.279,
+        "args": {
+          "External id": 167,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 479,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.006254886630179828,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.576,
+        "args": {
+          "External id": 175,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 499,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 14.222222222222221,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.32,
+        "args": {
+          "External id": 183,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 517,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.32,
+        "args": {
+          "External id": 191,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 535,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 51.84,
+        "args": {
+          "External id": 244,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 702,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00015432098765432098,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.28,
+        "args": {
+          "External id": 249,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 715,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00625,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.608,
+        "args": {
+          "External id": 257,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 735,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 13.473684210526315,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.32,
+        "args": {
+          "External id": 265,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 753,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.32,
+        "args": {
+          "External id": 273,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 771,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 0.961,
+        "args": {
+          "External id": 326,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 938,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.008324661810613945,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.248,
+        "args": {
+          "External id": 331,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 951,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00641025641025641,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 1.632,
+        "args": {
+          "External id": 339,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 971,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 5.019607843137255,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.928,
+        "args": {
+          "External id": 347,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 989,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.008620689655172414,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.96,
+        "args": {
+          "External id": 355,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1007,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.008333333333333333,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 0.928,
+        "args": {
+          "External id": 408,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1174,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.008620689655172414,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.281,
+        "args": {
+          "External id": 413,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1187,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00624512099921936,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.576,
+        "args": {
+          "External id": 421,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1207,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 14.222222222222221,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.32,
+        "args": {
+          "External id": 429,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1225,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.32,
+        "args": {
+          "External id": 437,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1243,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 0.961,
+        "args": {
+          "External id": 490,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1410,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.008324661810613945,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.28,
+        "args": {
+          "External id": 495,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1423,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00625,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.609,
+        "args": {
+          "External id": 503,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1443,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 13.451559934318555,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.288,
+        "args": {
+          "External id": 511,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1461,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.027777777777777776,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.288,
+        "args": {
+          "External id": 519,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1479,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.027777777777777776,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 57.249,
+        "args": {
+          "External id": 572,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1646,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00013974043214728642,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.28,
+        "args": {
+          "External id": 577,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1659,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00625,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.608,
+        "args": {
+          "External id": 585,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1679,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 13.473684210526315,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.32,
+        "args": {
+          "External id": 593,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1697,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.288,
+        "args": {
+          "External id": 601,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1715,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.027777777777777776,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 51.904,
+        "args": {
+          "External id": 654,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1882,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00015413070283600493,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.248,
+        "args": {
+          "External id": 659,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1895,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00641025641025641,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.608,
+        "args": {
+          "External id": 667,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1915,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 13.473684210526315,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.32,
+        "args": {
+          "External id": 675,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1933,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.288,
+        "args": {
+          "External id": 683,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 1951,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.027777777777777776,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 1.056,
+        "args": {
+          "External id": 736,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2118,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.007575757575757576,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.28,
+        "args": {
+          "External id": 741,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2131,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00625,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.608,
+        "args": {
+          "External id": 749,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2151,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 13.473684210526315,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.288,
+        "args": {
+          "External id": 757,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2169,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.027777777777777776,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.32,
+        "args": {
+          "External id": 765,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2187,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 52.96,
+        "args": {
+          "External id": 818,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2354,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00015105740181268882,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.279,
+        "args": {
+          "External id": 823,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2367,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.006254886630179828,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 1.6,
+        "args": {
+          "External id": 831,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2387,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 5.12,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 1.12,
+        "args": {
+          "External id": 839,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2405,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.007142857142857143,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.993,
+        "args": {
+          "External id": 847,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2423,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.008056394763343404,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 0.96,
+        "args": {
+          "External id": 900,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2590,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.008333333333333333,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.28,
+        "args": {
+          "External id": 905,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2603,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00625,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.576,
+        "args": {
+          "External id": 913,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2623,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 14.222222222222221,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.32,
+        "args": {
+          "External id": 921,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2641,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.288,
+        "args": {
+          "External id": 929,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2659,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.027777777777777776,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 51.648,
+        "args": {
+          "External id": 982,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2826,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00015489467162329616,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.344,
+        "args": {
+          "External id": 987,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2839,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.005952380952380952,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.576,
+        "args": {
+          "External id": 995,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2859,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 14.222222222222221,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.32,
+        "args": {
+          "External id": 1003,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2877,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.288,
+        "args": {
+          "External id": 1011,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 2895,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.027777777777777776,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 53.504,
+        "args": {
+          "External id": 1064,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3062,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00014952153110047846,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.28,
+        "args": {
+          "External id": 1069,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3075,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00625,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.608,
+        "args": {
+          "External id": 1077,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3095,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 13.473684210526315,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.319,
+        "args": {
+          "External id": 1085,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3113,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025078369905956112,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.32,
+        "args": {
+          "External id": 1093,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3131,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.025,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 1.632,
+        "args": {
+          "External id": 1146,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3298,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.004901960784313725,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.248,
+        "args": {
+          "External id": 1151,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3311,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00641025641025641,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.608,
+        "args": {
+          "External id": 1159,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3331,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 13.473684210526315,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.288,
+        "args": {
+          "External id": 1167,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3349,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.027777777777777776,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.288,
+        "args": {
+          "External id": 1175,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3367,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.027777777777777776,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 1.088,
+        "args": {
+          "External id": 1228,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3534,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.007352941176470588,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "duration_us": 1.281,
+        "args": {
+          "External id": 1233,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3547,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.00624512099921936,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.608,
+        "args": {
+          "External id": 1241,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3567,
+          "bytes": 8192,
+          "memory bandwidth (GB/s)": 13.473684210526315,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.288,
+        "args": {
+          "External id": 1249,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3585,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.027777777777777776,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "duration_us": 0.288,
+        "args": {
+          "External id": 1257,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3603,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.027777777777777776,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 0,
+          "channel_type": 1
+        }
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "duration_us": 0.992,
+        "args": {
+          "External id": 1310,
+          "device": 0,
+          "context": 1,
+          "stream": 7,
+          "correlation": 3770,
+          "bytes": 8,
+          "memory bandwidth (GB/s)": 0.008064516129032258,
+          "graph id": 0,
+          "graph node id": 0,
+          "channel": 12,
+          "channel_type": 2
+        }
+      }
+    ],
+    "runtime_calls": [
+      {
+        "name": "cudaMemcpyAsync",
+        "total_ms": 296.86898499999995,
+        "calls": 80
+      },
+      {
+        "name": "cudaGraphLaunch",
+        "total_ms": 3.8283609999999992,
+        "calls": 16
+      },
+      {
+        "name": "cudaLaunchKernel",
+        "total_ms": 0.7905410000000005,
+        "calls": 192
+      },
+      {
+        "name": "cudaStreamSynchronize",
+        "total_ms": 0.18783499999999997,
+        "calls": 64
+      },
+      {
+        "name": "cudaStreamIsCapturing",
+        "total_ms": 0.02436899999999999,
+        "calls": 64
+      },
+      {
+        "name": "cudaDeviceSynchronize",
+        "total_ms": 0.018261,
+        "calls": 2
+      }
+    ],
+    "largest_gpu_gaps_us": [
+      1148.39111328125,
+      1130.75927734375,
+      562.2431640625,
+      525.57080078125,
+      487.17138671875,
+      435.52197265625,
+      417.31396484375,
+      408.962890625,
+      387.04296875,
+      319.26611328125,
+      319.1064453125,
+      316.00244140625,
+      310.3701171875,
+      307.97021484375,
+      303.1376953125,
+      289.92236328125,
+      129.12109375,
+      128.44775390625,
+      100.89697265625,
+      91.93701171875
+    ]
+  }
+}

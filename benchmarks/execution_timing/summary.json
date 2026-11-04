@@ -1,0 +1,100 @@
+{
+  "kind": "execution_timing_investigation",
+  "executor": [
+    {
+      "case": "b1_short",
+      "baseline_tokens_per_s": 61.54632348945753,
+      "candidate_tokens_per_s": 61.734364622162005,
+      "observed_change_percent": 0.3055278074192147,
+      "all_paired_token_hashes_match": true,
+      "profile_kernel_ms_per_step": 15.3823591875,
+      "profile_copy_ms_per_step": 0.0331304375,
+      "profile_gpu_busy_fraction": 0.9396402956328086
+    },
+    {
+      "case": "b256_short",
+      "baseline_tokens_per_s": 6538.487891089687,
+      "candidate_tokens_per_s": 6562.892546562914,
+      "observed_change_percent": 0.3732461676113852,
+      "all_paired_token_hashes_match": true,
+      "profile_kernel_ms_per_step": 36.888659062500004,
+      "profile_copy_ms_per_step": 0.0037676875,
+      "profile_gpu_busy_fraction": 0.9494788360569475
+    },
+    {
+      "case": "b1_long",
+      "baseline_tokens_per_s": 51.39784642928234,
+      "candidate_tokens_per_s": 52.10631141944158,
+      "observed_change_percent": 1.378394309057307,
+      "all_paired_token_hashes_match": true,
+      "profile_kernel_ms_per_step": 18.6473165625,
+      "profile_copy_ms_per_step": 0.0278466875,
+      "profile_gpu_busy_fraction": 0.9590202559356784
+    }
+  ],
+  "handoff": [
+    {
+      "batch_size": 1,
+      "stream": false,
+      "requests": 3,
+      "generated_tokens": 192,
+      "end_to_end_tokens_per_s": 60.80959080556093,
+      "decode_steps": 189,
+      "worker_decode_s": 3.0627726770017034,
+      "scheduler_extra_s": 0.04022600098869589,
+      "median_worker_step_ms": 16.19399600167526,
+      "median_scheduler_extra_ms": 0.2133430007233983,
+      "p95_scheduler_extra_ms": 0.27300319889036473
+    },
+    {
+      "batch_size": 1,
+      "stream": true,
+      "requests": 3,
+      "generated_tokens": 192,
+      "end_to_end_tokens_per_s": 60.45735343628391,
+      "decode_steps": 189,
+      "worker_decode_s": 3.0822515899890277,
+      "scheduler_extra_s": 0.038597448023210745,
+      "median_worker_step_ms": 16.31735400042089,
+      "median_scheduler_extra_ms": 0.2150190011889208,
+      "p95_scheduler_extra_ms": 0.28732040045724716
+    },
+    {
+      "batch_size": 256,
+      "stream": false,
+      "requests": 768,
+      "generated_tokens": 49152,
+      "end_to_end_tokens_per_s": 5132.479303180782,
+      "decode_steps": 195,
+      "worker_decode_s": 7.882852751010432,
+      "scheduler_extra_s": 0.08073996698476549,
+      "median_worker_step_ms": 39.94995299945003,
+      "median_scheduler_extra_ms": 0.38987899824860506,
+      "p95_scheduler_extra_ms": 0.6144040002254769
+    },
+    {
+      "batch_size": 256,
+      "stream": true,
+      "requests": 768,
+      "generated_tokens": 49152,
+      "end_to_end_tokens_per_s": 4916.046529447125,
+      "decode_steps": 195,
+      "worker_decode_s": 7.900115671012827,
+      "scheduler_extra_s": 0.4056696339866903,
+      "median_worker_step_ms": 39.905338000608026,
+      "median_scheduler_extra_ms": 2.1506949997274205,
+      "p95_scheduler_extra_ms": 3.0332681990330457
+    }
+  ],
+  "limitations": [
+    "Five executor repetitions per case; three engine waves per configuration; unlocked clocks and power.",
+    "Paired profiles precede scoping dtype restoration to compiled preparation; compiled tensor behavior is preserved.",
+    "No implemented overlap or demonstrated overlap speedup; see README for measurement boundaries."
+  ],
+  "validation": {
+    "standard_passed": 180,
+    "standard_skipped": 9,
+    "local_checkpoint_passed": 3,
+    "real_engine_passed": 4
+  }
+}

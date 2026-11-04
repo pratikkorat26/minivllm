@@ -2,9 +2,40 @@
 
 ## Current model: LFM3-1.7B
 
-The runtime currently supports `LiquidAI/LFM3-1.7B` only. The checked-in engine
-and attention JSON files predate the LFM3 migration and are retained in the
+The runtime currently supports `LiquidAI/LFM3-1.7B` only. The original `engine.json`
+and `attention.json` files predate the LFM3 migration and are retained in the
 **historical Gemma measurements** section below. They are not LFM3 results.
+
+### Execution overlap (Linux, November 3, 2026)
+
+The [overlap report](overlap_optimization/README.md) contains the latest fully
+warmed BF16 engine-streaming results on the RTX 4070 Laptop 8 GB. Loading,
+compilation and CUDA graph capture are excluded; every measured wave checks that
+the compilation/capture counters remain unchanged. Rates include prefill,
+scheduling and the streaming validation harness, rather than HTTP serving.
+
+| Workload | Features disabled | Default S1 overlap | Optional exact greedy S8 |
+|---|---:|---:|---:|
+| 256 requests, 64-token output cap | 4,813 | 5,016 (+4.2%) | 5,250 (+9.1%) |
+| 128 requests, 512-token output cap | 2,791 | 2,990 (+7.1%) | 3,104 (+11.2%) |
+
+Units are aggregate output tokens/s. S8 queues up to eight sequential greedy
+steps before a host transfer; it uses no draft model or guessed tokens. It is
+opt-in and trades finer text cadence and cancellation checks for throughput.
+Compared token/text hashes match. Source hashes, raw waves, power telemetry and
+the diagnostic CPU/GPU overlap trace summary are in
+[`overlap_optimization/final/`](overlap_optimization/final/); the compact verified
+record is [`summary.json`](overlap_optimization/summary.json). These results do
+not establish a hardware maximum or universal output identity.
+
+Additional validation records:
+
+- [8K prefill verification](prefill_verification/README.md): 60 requests across
+  repeated and varied 8,118-token prompts, with all input tokens processed.
+- [Output-quality audit](quality_assessment/README.md): 90 responses across
+  native/reference configurations, with model limitations and grading scope.
+- [Initial execution timing](execution_timing/README.md): historical traces
+  separating actual copies from waits for preceding GPU computation.
 
 ### PyTorch software optimization pass (Linux, November 1, 2026)
 

@@ -107,6 +107,20 @@ class Lfm3Tokenizer:
     def decode(self, ids: list[int]) -> str:
         return self._tok.decode(ids, skip_special_tokens=False)
 
+    def create_stream_decoder(self):
+        """Return one request's UTF-8-aware decoder, or use the full-text fallback."""
+        from tokenizers import decoders
+
+        decoder_type = getattr(decoders, "DecodeStream", None)
+        if decoder_type is None:
+            return None
+        decoder = decoder_type(skip_special_tokens=False)
+
+        def decode(ids):
+            return "".join(decoder.step(self._tok, token) or "" for token in ids)
+
+        return decode
+
 
 class Lfm3Runtime:
     def __init__(
