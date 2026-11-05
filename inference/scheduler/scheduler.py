@@ -190,10 +190,26 @@ class AsyncScheduler:
                 budget -= await self._run_decode()
             self._prefill_turn = bool(self.prefill and budget <= 0)
             remaining = len(self.prefill)
+            prefilled_tokens = 0
             while remaining and budget > 0 and not self._closed:
                 # Do not hold text behind a potentially long prefill chunk.
                 self._flush_stream_tokens()
+                # A budget smaller than the next chunk would spend a whole
+                # forward on a handful of tokens for one row.  Defer it while
+                # other prefill work exists so the next round can batch it.
+                chunk_len = self._head_prefill_length()
+                if (
+                    chunk_len is not None
+                    and remaining > 1
+                    and budget < chunk_len
+                ):
+                    if not prefilled_tokens:
+                        # Let prefill run first next round; otherwise decode
+                        # could leave a too-small budget indefinitely.
+                        self._prefill_turn = True
+                    break
                 tokens, requests = await self._run_prefill(budget, remaining)
+                prefilled_tokens += tokens
                 budget -= tokens
                 remaining -= requests
             self.last_scheduled_tokens = self.config.max_batch_tokens - budget
@@ -201,6 +217,15 @@ class AsyncScheduler:
 
     def _has_work(self) -> bool:
         return bool(self.waiting or self.prefill or self.decode or self.active)
+
+    def _head_prefill_length(self) -> Optional[int]:
+        """Length of the oldest queued chunk, or None when it has no work."""
+        if not self.prefill:
+            return None
+        online = self.prefill[0]
+        if online.result.done() or online.request.current_input is None:
+            return None
+        return int(online.request.current_input.shape[1])
 
     def _admit(self) -> None:
         while self.waiting:

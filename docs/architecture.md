@@ -40,9 +40,11 @@ Decode selects the oldest request's sampling cohort, capped by batch size and
 The default round executes one step; optional settled-cohort greedy chunks
 charge `eligible_requests * steps` against that same budget.
 Remaining budget serves one chunk from each queued prefill, in round-robin order.
-When decode exhausts the budget while prefill waits, the next tick reserves a
-prefill turn. With `enable_prefill_batching`, the oldest chunk anchors a batch
-of equal-length chunks with matching sampling settings and completion phase.
+A chunk that does not fit the remaining budget is deferred when multiple
+prefill requests remain; a single remaining request may still be truncated.
+If decode leaves too little budget for any prefill progress, the next tick
+reserves a prefill turn. With `enable_prefill_batching`, the oldest chunk anchors
+a batch of equal-length chunks with matching sampling settings and completion phase.
 Each request receives at most one chunk per round, and the sum of all chunk
 lengths must fit the remaining token budget. Prior KV lengths may differ; no
 padding or mixed prefill/decode forward is needed. Models advertise support

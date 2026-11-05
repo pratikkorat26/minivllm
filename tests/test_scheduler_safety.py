@@ -74,6 +74,63 @@ def test_full_decode_budget_does_not_starve_prefill():
     asyncio.run(run())
 
 
+def test_small_prefill_remainder_is_deferred_not_truncated():
+    async def run():
+        runtime = FakeRuntime(strict_cache_check=False)
+        engine = LLMEngine(
+            runtime,
+            config(
+                max_batch_tokens=10,
+                decode_batch_size=8,
+                max_concurrent_requests=8,
+                max_queue_size=8,
+                max_new_tokens=1,
+            ),
+        )
+        try:
+            results = await asyncio.gather(
+                *(
+                    engine.generate(GenerateRequest(str(index), "1 2 3"))
+                    for index in range(5)
+                )
+            )
+            assert all(result.error_message is None for result in results)
+            # The one-token remainder of the first round is deferred and
+            # batched whole next round instead of running a one-row chunk.
+            assert [result.prefill_steps for result in results] == [1] * 5
+        finally:
+            await engine.shutdown()
+
+    asyncio.run(run())
+
+
+def test_deferred_prefill_gets_a_turn_with_busy_decode():
+    async def run():
+        runtime = FakeRuntime(strict_cache_check=False)
+        engine = LLMEngine(
+            runtime,
+            config(max_batch_tokens=4, max_new_tokens=8, max_concurrent_requests=4),
+        )
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(
+                    engine.generate(GenerateRequest("decode", "1")),
+                    engine.generate(GenerateRequest("first", "2 3 4 5")),
+                    engine.generate(GenerateRequest("second", "6 7 8 9")),
+                ),
+                timeout=5,
+            )
+            assert all(result.error_message is None for result in results)
+            assert results[1].prefill_steps == 1
+            # The last queued request may still use a partial budget.
+            assert results[2].prefill_steps <= 2
+            assert runtime.model.call_last_tokens.index(5) < runtime.model.call_last_tokens.index(71)
+        finally:
+            await engine.shutdown()
+
+    asyncio.run(run())
+
+
 def test_initialization_error_releases_allocated_blocks():
     async def run():
         engine = LLMEngine(FakeRuntime(), config())

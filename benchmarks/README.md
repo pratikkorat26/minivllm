@@ -29,6 +29,8 @@ record is [`summary.json`](overlap_optimization/summary.json). These results do
 not establish a hardware maximum or universal output identity.
 
 Additional validation records:
+- [Prefill shape scheduling](prefill_shape/README.md): deferring small budget
+  remainders to reduce fragmented prefill forwards, with throughput and output checks.
 
 - [8K prefill verification](prefill_verification/README.md): 60 requests across
   repeated and varied 8,118-token prompts, with all input tokens processed.
