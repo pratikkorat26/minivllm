@@ -1,0 +1,141 @@
+{
+  "date": "2026-11-04",
+  "device": "NVIDIA GeForce RTX 4070 Laptop GPU",
+  "torch": "2.15.0+cu132",
+  "torch_profile": "performance",
+  "workload": "BF16 LFM3-1.7B, PyTorch compilation, 2048-token scheduling budget, compatible prefill batching, custom paged attention disabled",
+  "option": {
+    "name": "enable_cudnn_attention",
+    "default": false,
+    "enable": "--enable-cudnn-attention / LFM3_API_ENABLE_CUDNN_ATTENTION=true / --cudnn-attention in handoff.py",
+    "reason": "cuDNN is not bitwise reproducible at some batch/context shapes"
+  },
+  "cases": [
+    {
+      "label": "batch_256_64_s1",
+      "batch_size": 256,
+      "output_token_cap": 64,
+      "decode_steps_per_round": 1,
+      "baseline_tokens_per_s": 5016.1,
+      "cudnn_tokens_per_s": 5895.6,
+      "change_percent": 17.5,
+      "baseline_wave_token_hashes": [
+        "3517e89560ea",
+        "3517e89560ea",
+        "3517e89560ea",
+        "3517e89560ea",
+        "3517e89560ea"
+      ],
+      "cudnn_wave_token_hashes": [
+        "d32eae370ee6",
+        "d32eae370ee6",
+        "d32eae370ee6",
+        "d32eae370ee6",
+        "d32eae370ee6"
+      ],
+      "requests": 1280,
+      "generated_tokens": 81920,
+      "peak_cuda_allocated_bytes": 4958253056,
+      "source_sha256": {
+        "inference/executor.py": "912346902504bfac89aae4998eaba0d9c308b870371b87bb1a9997f34189c387",
+        "inference/scheduler/scheduler.py": "318a7659d010561efb31ae054de988a54b29f53a44b084f7965b887e9b59fe33",
+        "runtime/provider.py": "3359e64d958d647f1d06d2149f9a207de91d7f249fd24e17e6e2e54a6a60a377",
+        "lfm3/rope.py": "631ee89150073dfab708551cf3e296276a6c7b33e64ff2d8820cc65289bb5cdc"
+      }
+    },
+    {
+      "label": "batch_256_64_s8",
+      "batch_size": 256,
+      "output_token_cap": 64,
+      "decode_steps_per_round": 8,
+      "baseline_tokens_per_s": 5250.1,
+      "cudnn_tokens_per_s": 6205.7,
+      "change_percent": 18.2,
+      "baseline_wave_token_hashes": [
+        "3517e89560ea",
+        "3517e89560ea",
+        "3517e89560ea",
+        "3517e89560ea",
+        "3517e89560ea"
+      ],
+      "cudnn_wave_token_hashes": [
+        "d32eae370ee6",
+        "d32eae370ee6",
+        "d32eae370ee6",
+        "d32eae370ee6",
+        "d32eae370ee6"
+      ],
+      "requests": 1280,
+      "generated_tokens": 81920,
+      "peak_cuda_allocated_bytes": 5002331136,
+      "source_sha256": {
+        "inference/executor.py": "912346902504bfac89aae4998eaba0d9c308b870371b87bb1a9997f34189c387",
+        "inference/scheduler/scheduler.py": "318a7659d010561efb31ae054de988a54b29f53a44b084f7965b887e9b59fe33",
+        "runtime/provider.py": "3359e64d958d647f1d06d2149f9a207de91d7f249fd24e17e6e2e54a6a60a377",
+        "lfm3/rope.py": "631ee89150073dfab708551cf3e296276a6c7b33e64ff2d8820cc65289bb5cdc"
+      }
+    },
+    {
+      "label": "batch_128_512_s1",
+      "batch_size": 128,
+      "output_token_cap": 512,
+      "decode_steps_per_round": 1,
+      "baseline_tokens_per_s": 2990.1,
+      "cudnn_tokens_per_s": 3710.0,
+      "change_percent": 24.1,
+      "baseline_wave_token_hashes": [
+        "4f7a175886a4",
+        "4f7a175886a4",
+        "4f7a175886a4"
+      ],
+      "cudnn_wave_token_hashes": [
+        "58b74591b759",
+        "31dffbb1e007",
+        "dee5500e3045"
+      ],
+      "requests": 384,
+      "generated_tokens": 196608,
+      "peak_cuda_allocated_bytes": 5714021888,
+      "source_sha256": {
+        "inference/executor.py": "912346902504bfac89aae4998eaba0d9c308b870371b87bb1a9997f34189c387",
+        "inference/scheduler/scheduler.py": "318a7659d010561efb31ae054de988a54b29f53a44b084f7965b887e9b59fe33",
+        "runtime/provider.py": "3359e64d958d647f1d06d2149f9a207de91d7f249fd24e17e6e2e54a6a60a377",
+        "lfm3/rope.py": "631ee89150073dfab708551cf3e296276a6c7b33e64ff2d8820cc65289bb5cdc"
+      }
+    },
+    {
+      "label": "batch_128_512_s8",
+      "batch_size": 128,
+      "output_token_cap": 512,
+      "decode_steps_per_round": 8,
+      "baseline_tokens_per_s": 3103.8,
+      "cudnn_tokens_per_s": 3855.1,
+      "change_percent": 24.2,
+      "baseline_wave_token_hashes": [
+        "4f7a175886a4",
+        "4f7a175886a4",
+        "4f7a175886a4"
+      ],
+      "cudnn_wave_token_hashes": [
+        "b0da87f2c012",
+        "ce80825140e8",
+        "b4abce3f4abd"
+      ],
+      "requests": 384,
+      "generated_tokens": 196608,
+      "peak_cuda_allocated_bytes": 5747508736,
+      "source_sha256": {
+        "inference/executor.py": "912346902504bfac89aae4998eaba0d9c308b870371b87bb1a9997f34189c387",
+        "inference/scheduler/scheduler.py": "318a7659d010561efb31ae054de988a54b29f53a44b084f7965b887e9b59fe33",
+        "runtime/provider.py": "3359e64d958d647f1d06d2149f9a207de91d7f249fd24e17e6e2e54a6a60a377",
+        "lfm3/rope.py": "631ee89150073dfab708551cf3e296276a6c7b33e64ff2d8820cc65289bb5cdc"
+      }
+    }
+  ],
+  "validation": {
+    "determinism": "determinism.json",
+    "token_divergence": "token_divergence.json",
+    "quality_optimized": "quality_optimized_greedy.json",
+    "quality_eager": "quality_eager_greedy.json"
+  }
+}

@@ -10,6 +10,53 @@ from lfm3.paged_attention import can_use_paged_decode, paged_decode_attention
 from lfm3.rope import rotate_half
 
 
+def prefer_cudnn_attention(enabled: bool = True) -> bool:
+    """Give cuDNN's fused SDPA kernel priority over the default backends.
+
+    With an additive attention mask the default dispatcher prefers the
+    memory-efficient kernel, even though cuDNN handles that mask several times
+    faster on Ampere and newer GPUs.  The fused kernel reduces in a different
+    order, so BF16 near-ties in greedy decoding can resolve differently, and
+    repeated calls are not bitwise reproducible at some batch/context shapes.
+    The option is therefore off by default; see the benchmark notes.  The
+    setting is process-wide: choose it before constructing the first executor,
+    because a later ``False`` cannot undo an installed priority.  Returns
+    ``True`` when the priority was installed.
+    """
+    if not enabled or not torch.cuda.is_available():
+        return False
+    try:
+        from torch.nn.attention import SDPBackend, _sdpa_kernel
+    except ImportError:
+        return False
+    try:
+        _sdpa_kernel(
+            [
+                SDPBackend.CUDNN_ATTENTION,
+                SDPBackend.FLASH_ATTENTION,
+                SDPBackend.EFFICIENT_ATTENTION,
+                SDPBackend.MATH,
+            ],
+            set_priority=True,
+        )
+    except (AttributeError, RuntimeError, TypeError):
+        return False
+    # The backend choice is baked into Inductor's generated graph.  Compile
+    # artifacts written before this preference existed would otherwise be
+    # reused under the same graph key, so keep cuDNN-built artifacts in their
+    # own cache directory.  This is process-wide, like the backend priority.
+    try:
+        from torch._inductor.runtime.cache_dir_utils import cache_dir
+
+        base = cache_dir()
+        suffix = "minivllm-cudnn-attention"
+        if not base.endswith(suffix):
+            os.environ["TORCHINDUCTOR_CACHE_DIR"] = os.path.join(base, suffix)
+    except (ImportError, OSError, RuntimeError):
+        pass
+    return True
+
+
 class RMSNorm(nn.Module):
     """LFM3 RMSNorm (unit-offset weight, computed in float32)."""
 

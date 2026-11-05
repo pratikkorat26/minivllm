@@ -1,0 +1,103 @@
+{
+  "workload": {
+    "batch_size": 256,
+    "output_tokens": 64,
+    "decode_steps": 1,
+    "prompt": "The purpose of a KV cache is",
+    "sampling": "greedy temperature=0 top_p=1 top_k=0 repetition_penalty=1"
+  },
+  "baseline": {
+    "backend": "efficient attention (default priority)",
+    "compile_cache": "fresh",
+    "wave_hash": "3517e89560eacb66e9419ea44d80e63d0b8c896a955659de4c74efb3c379fa80",
+    "unique_sequences": 4,
+    "variants": [
+      {
+        "count": 107,
+        "tokens": 64
+      },
+      {
+        "count": 102,
+        "tokens": 64
+      },
+      {
+        "count": 45,
+        "tokens": 64
+      },
+      {
+        "count": 2,
+        "tokens": 64
+      }
+    ]
+  },
+  "cudnn": {
+    "backend": "cuDNN attention (priority installed)",
+    "compile_cache": "minivllm-cudnn-attention",
+    "wave_hash": "d32eae370ee603f37dde38a06f20223e0f961296bc2ea32775e790e103f4636a",
+    "unique_sequences": 1,
+    "variants": [
+      {
+        "count": 256,
+        "tokens": 64
+      }
+    ]
+  },
+  "comparison": {
+    "identical_requests": 2,
+    "total_requests": 256,
+    "diverging_requests": 254,
+    "total_generated_tokens": 16384,
+    "diverging_tail_tokens": 6652,
+    "first_divergence_histogram": {
+      "35": 152,
+      "42": 102
+    },
+    "examples": [
+      {
+        "request": 0,
+        "first_divergence": 35,
+        "baseline_token": 16962,
+        "cudnn_token": 19869,
+        "diverging_tail_tokens": 29
+      },
+      {
+        "request": 1,
+        "first_divergence": 35,
+        "baseline_token": 16962,
+        "cudnn_token": 19869,
+        "diverging_tail_tokens": 29
+      },
+      {
+        "request": 2,
+        "first_divergence": 35,
+        "baseline_token": 16962,
+        "cudnn_token": 19869,
+        "diverging_tail_tokens": 29
+      },
+      {
+        "request": 3,
+        "first_divergence": 35,
+        "baseline_token": 16962,
+        "cudnn_token": 19869,
+        "diverging_tail_tokens": 29
+      },
+      {
+        "request": 4,
+        "first_divergence": 35,
+        "baseline_token": 16962,
+        "cudnn_token": 19869,
+        "diverging_tail_tokens": 29
+      },
+      {
+        "request": 5,
+        "first_divergence": 35,
+        "baseline_token": 16962,
+        "cudnn_token": 19869,
+        "diverging_tail_tokens": 29
+      }
+    ]
+  },
+  "note": "All 256 requests share one prompt, so identical request rows are not independent samples. The default backend itself emitted four different 64-token continuations for that single prompt depending on prefill cohort, while cuDNN emitted one. Divergences are word-choice near-ties inside otherwise equivalent answers. The single cuDNN continuation is byte-identical to one of those four baseline variants (the one produced for 2 of 256 rows), so cuDNN selects an existing trajectory rather than new content.",
+  "cudnn_matches_baseline_variant": true,
+  "baseline_rows_supporting_that_variant": 2
+}

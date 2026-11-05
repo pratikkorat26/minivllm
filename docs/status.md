@@ -1,8 +1,37 @@
-# Project status — updated November 3, 2026
+# Project status — updated November 4, 2026
 
-Latest: execution overlap and optional exact greedy chunks are implemented and
-validated. The November 3 record below contains the current results; earlier
-sections preserve their original workloads and validation counts.
+Latest: an opt-in cuDNN attention switch is implemented and validated. It
+raises the November 3 overlap workloads while preserving audit scores, and
+remains off by default to keep temperature=0 output reproducible. The sections
+below preserve their original workloads and validation counts.
+
+## November 4: opt-in cuDNN attention
+
+LFM3 passes an additive `[B,1,Q,S]` mask to SDPA. Flash attention rejects that
+mask and the default priority places it first, so the dispatcher used the
+memory-efficient kernel. Opting in to cuDNN priority
+(`EngineConfig.enable_cudnn_attention`, default false) cut attention kernel time
+at the measured shapes and reduced a compiled batch-256 decode wave from 3.06 s
+to 2.58 s of recorded CUDA time. End-to-end streaming results:
+
+| Validated workload | Default backend | cuDNN attention |
+|---|---:|---:|
+| 256 requests, 64-token cap, S1 | 5,016 | **5,896 (+17.5%)** |
+| 256 requests, 64-token cap, S8 | 5,250 | **6,206 (+18.2%)** |
+| 128 requests, 512-token cap, S1 | 2,990 | **3,710 (+24.1%)** |
+| 128 requests, 512-token cap, S8 | 3,104 | **3,855 (+24.2%)** |
+
+Units are aggregate output tokens/s with the same harness, warmup and
+performance-profile rules as November 3. cuDNN is not bitwise reproducible at
+some batch/context shapes: repeated identical calls can differ by one BF16 ulp,
+which flips near-tied greedy tokens, and the three 512-token waves produced
+three different hashes. The memory-efficient kernel returned one bitwise result
+in every measured cell. The 18-task quality audit kept 8/14 strict passes in
+compiled mode and 9/14 in eager mode, with 16/18 and 17/18 response texts
+identical. Inductor's FX-graph key does not include the SDPA priority, so cuDNN
+artifacts live in a separate `minivllm-cudnn-attention` cache subdirectory.
+The option is therefore off by default. Details and raw data are in the
+[cuDNN report](../benchmarks/cudnn_attention/README.md).
 
 ## November 1: PyTorch throughput optimization
 

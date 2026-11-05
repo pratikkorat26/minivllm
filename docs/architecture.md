@@ -107,8 +107,15 @@ consume and update a per-request state tensor of shape
 request and carries it across prefill chunks and decode steps.
 
 SDPA receives Q `[B,H,Q,D]`, K/V `[B,G,S,D]`, `enable_gqa=True`, and additive mask
-`[B,1,Q,S]` combining causal, sliding and per-row lengths. PyTorch chooses the
-backend; no particular fused kernel is forced. Dense gather is still an O(context)
+`[B,1,Q,S]` combining causal, sliding and per-row lengths. Flash attention cannot
+consume that mask, so the default priority selects the memory-efficient kernel.
+`lfm3.attention.prefer_cudnn_attention` instead gives the fused cuDNN kernel
+priority before the first forward when
+`EngineConfig.enable_cudnn_attention` is opted into (off by default); the
+dispatcher still falls back per shape, and cuDNN reductions can be
+non-reproducible at some shapes. Compiled artifacts are kept in a
+separate `minivllm-cudnn-attention` cache directory because Inductor's graph key
+does not include the backend priority. Dense gather is still an O(context)
 allocation/copy for full-attention layers. Sliding layers gather at most
 `window + chunk_length - 1` keys per row, starting at each row's own window;
 their masks retain absolute positions for causal and ragged-length checks.

@@ -104,6 +104,9 @@ class ChatCompletionService:
                 enable_prefill_batching=bool(
                     _config_value(config, "enable_prefill_batching", False)
                 ),
+                enable_cudnn_attention=bool(
+                    _config_value(config, "enable_cudnn_attention", False)
+                ),
                 enable_prefix_cache=bool(
                     _config_value(config, "enable_prefix_cache", False)
                 ),

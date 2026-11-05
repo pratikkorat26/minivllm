@@ -40,6 +40,7 @@ class RuntimeSettings:
     num_kv_blocks: Optional[int] = None
     prefill_chunk_size: Optional[int] = None
     enable_prefill_batching: bool = False
+    enable_cudnn_attention: bool = False
     enable_prefix_cache: bool = False
     max_prefix_cache_entries: int = 64
 
@@ -150,6 +151,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--prefill-chunk-size", type=_parse_optional_int, default=argparse.SUPPRESS)
     _add_bool_override(parser, "enable_prefix_cache")
     _add_bool_override(parser, "enable_prefill_batching")
+    _add_bool_override(parser, "enable_cudnn_attention")
     parser.add_argument("--max-prefix-cache-entries", type=int, default=argparse.SUPPRESS)
     return parser
 
@@ -270,6 +272,10 @@ def load_settings_from_env(env: Mapping[str, str] = os.environ) -> Settings:
                 env, "enable_prefill_batching", _parse_bool,
                 runtime_defaults.enable_prefill_batching,
             ),
+            enable_cudnn_attention=_from_env(
+                env, "enable_cudnn_attention", _parse_bool,
+                runtime_defaults.enable_cudnn_attention,
+            ),
             enable_prefix_cache=_from_env(
                 env,
                 "enable_prefix_cache",
@@ -370,6 +376,9 @@ def parse_settings(
         ),
         enable_prefill_batching=_override(
             args, "enable_prefill_batching", settings.runtime.enable_prefill_batching,
+        ),
+        enable_cudnn_attention=_override(
+            args, "enable_cudnn_attention", settings.runtime.enable_cudnn_attention,
         ),
         enable_prefix_cache=_override(
             args,

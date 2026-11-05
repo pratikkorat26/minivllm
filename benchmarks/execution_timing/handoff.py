@@ -58,6 +58,7 @@ async def run(args):
             decode_batch_size=args.batch_size,
             decode_steps_per_round=args.decode_steps,
             enable_prefill_batching=True,
+            enable_cudnn_attention=args.cudnn_attention,
             enable_stream_overlap=args.variant in ("full", "stream"),
             enable_decode_metadata_cache=args.variant in ("full", "metadata"),
             enable_pinned_token_copy=args.variant in ("full", "pinned"),
@@ -326,6 +327,11 @@ async def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument(
+        "--cudnn-attention",
+        action="store_true",
+        help="Opt in to cuDNN SDPA priority; not bitwise reproducible at some shapes.",
+    )
     parser.add_argument("--stream", action="store_true")
     parser.add_argument(
         "--variant",

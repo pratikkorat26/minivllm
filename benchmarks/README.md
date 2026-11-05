@@ -37,6 +37,29 @@ Additional validation records:
 - [Initial execution timing](execution_timing/README.md): historical traces
   separating actual copies from waits for preceding GPU computation.
 
+### cuDNN attention dispatch (Linux, November 4, 2026)
+
+The [cuDNN report](cudnn_attention/README.md) measures the opt-in
+backend-priority change on top of the overlap implementation. It uses the same
+harness, warmup rules and validation checks.
+
+| Workload | Default backend | cuDNN attention | Change |
+|---|---:|---:|---:|
+| 256 requests, 64-token cap, S1 | 5,016 | 5,896 | +17.5% |
+| 256 requests, 64-token cap, S8 | 5,250 | 6,206 | +18.2% |
+| 128 requests, 512-token cap, S1 | 2,990 | 3,710 | +24.1% |
+| 128 requests, 512-token cap, S8 | 3,104 | 3,855 | +24.2% |
+
+cuDNN accepts the engine's additive mask directly and is 2.8–19× faster than
+the memory-efficient kernel at the measured decode shapes. It is off by default
+because the kernel is not bitwise reproducible at some batch/context shapes:
+repeated identical greedy calls can differ by one BF16 ulp, which flips near
+ties and changes the rest of that continuation. With it enabled, the 18-task
+quality audit keeps 8/14 strict passes in compiled mode and 9/14 in eager mode,
+with 16/18 and 17/18 response texts identical. Raw token comparisons, audit
+rows, kernel timings and cache-isolation notes are in
+[`cudnn_attention/`](cudnn_attention/).
+
 ### PyTorch software optimization pass (Linux, November 1, 2026)
 
 Real LFM3-1.7B BF16 weights, RTX 4070 Laptop 8 GB, PyTorch 2.15.0+cu132.

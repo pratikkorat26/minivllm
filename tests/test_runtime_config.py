@@ -49,6 +49,7 @@ class RuntimeConfigTests(unittest.TestCase):
                 "LFM3_API_PREFILL_CHUNK_SIZE": "128",
                 "LFM3_API_ENABLE_PREFIX_CACHE": "true",
                 "LFM3_API_ENABLE_PREFILL_BATCHING": "true",
+                "LFM3_API_ENABLE_CUDNN_ATTENTION": "true",
                 "LFM3_API_MAX_PREFIX_CACHE_ENTRIES": "32",
             },
         )
@@ -80,6 +81,7 @@ class RuntimeConfigTests(unittest.TestCase):
         self.assertEqual(settings.runtime.prefill_chunk_size, 128)
         self.assertTrue(settings.runtime.enable_prefix_cache)
         self.assertTrue(settings.runtime.enable_prefill_batching)
+        self.assertTrue(settings.runtime.enable_cudnn_attention)
         self.assertEqual(settings.runtime.max_prefix_cache_entries, 32)
 
     def test_cli_overrides_env(self):
@@ -107,6 +109,7 @@ class RuntimeConfigTests(unittest.TestCase):
                 "--request-timeout-s",
                 "1.5",
                 "--enable-prefix-cache",
+                "--enable-cudnn-attention",
                 "--max-prefix-cache-entries",
                 "16",
                 "--num-kv-blocks",
@@ -140,6 +143,7 @@ class RuntimeConfigTests(unittest.TestCase):
         self.assertEqual(settings.runtime.decode_batch_size, 5)
         self.assertEqual(settings.runtime.request_timeout_s, 1.5)
         self.assertTrue(settings.runtime.enable_prefix_cache)
+        self.assertTrue(settings.runtime.enable_cudnn_attention)
         self.assertEqual(settings.runtime.max_prefix_cache_entries, 16)
         self.assertIsNone(settings.runtime.num_kv_blocks)
 

@@ -5,6 +5,12 @@ emission with device execution. It uses resident BF16 LFM3-1.7B weights and KV
 on one RTX 4070 Laptop GPU, with PyTorch compilation and library kernels.
 No speculative decoding or handwritten CUDA/Triton kernels are involved.
 
+A later pass adds an opt-in cuDNN attention priority that raises the same
+workloads to 5,896 tokens/s (S1) and 6,206 tokens/s (S8) at batch 256; see the
+[cuDNN report](../cudnn_attention/README.md). That pass changes BF16 reduction
+order and is not bitwise reproducible at some shapes, so it is off by default
+and does not preserve the token hashes recorded here.
+
 ## Results and measurement boundaries
 
 The final measurements are under `final/`; `summary.json` verifies source hashes,

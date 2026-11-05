@@ -191,6 +191,28 @@ raw waves, power telemetry, validation and commands are in the
 [overlap report](benchmarks/overlap_optimization/README.md) and
 [machine-readable summary](benchmarks/overlap_optimization/summary.json).
 
+### cuDNN attention dispatch (Linux, November 4, 2026)
+
+PyTorch's default priority sends an additive-mask SDPA call to the
+memory-efficient kernel. An opt-in switch gives the fused cuDNN kernel priority
+— still BF16, no custom kernels — and cuts attention time at this engine's
+shapes:
+
+| Streaming workload | Default backend | cuDNN attention |
+|---|---:|---:|
+| 256 requests, 64-token output cap (S1) | 5,016 | **5,896 (+17.5%)** |
+| 256 requests, 64-token output cap (S8) | 5,250 | **6,206 (+18.2%)** |
+| 128 requests, 512-token output cap (S1) | 2,990 | **3,710 (+24.1%)** |
+| 128 requests, 512-token output cap (S8) | 3,104 | **3,855 (+24.2%)** |
+
+The option is off by default because cuDNN is not bitwise reproducible at some
+batch/context shapes: repeated identical greedy calls can differ by one BF16
+ulp, which flips near ties and changes the rest of that continuation. With it
+enabled, the 18-task audit keeps the same strict pass counts in compiled and
+eager modes, with 16/18 and 17/18 response texts identical. See the
+[cuDNN report](benchmarks/cudnn_attention/README.md) for kernel timings, the
+determinism measurements, raw waves and reproduction.
+
 ### Linux software optimization pass (November 2026)
 
 On the same RTX 4070 Laptop 8 GB, PyTorch 2.15 BF16 with compilation, equal-length
@@ -397,10 +419,14 @@ Settings use the `LFM3_API_*` prefix. Main controls:
 `MODEL_ID`, `QUANTIZATION`, `COMPILE_MODEL`, `MAX_BATCH_TOKENS`,
 `PREFILL_CHUNK_SIZE`, `DECODE_BATCH_SIZE`, `DECODE_STEPS_PER_ROUND`, `MAX_CONCURRENT_REQUESTS`,
 `MAX_QUEUE_SIZE`, `MAX_KV_CACHE_TOKENS`, `KV_BLOCK_SIZE`, `NUM_KV_BLOCKS`,
-`REQUEST_TIMEOUT_S`, `ENABLE_PREFIX_CACHE`, `ENABLE_PREFILL_BATCHING`.
+`REQUEST_TIMEOUT_S`, `ENABLE_PREFIX_CACHE`, `ENABLE_PREFILL_BATCHING`,
+`ENABLE_CUDNN_ATTENTION`.
 `max_queue_size` bounds **all outstanding requests**,
 including active ones. `prefill_chunk_size=None` uses the token budget as the
 chunk bound. `ENABLE_PREFIX_CACHE` must stay false for LFM3.
+`ENABLE_CUDNN_ATTENTION` (default false) gives the fused cuDNN kernel priority
+on CUDA for a measured throughput gain; leave it off when temperature=0 output
+must be bitwise reproducible, because cuDNN reductions vary at some shapes.
 
 Available endpoints: `/healthz`, `/readyz`, `/v1/models`, `/stats`, `/metrics`,
 `/v1/chat/completions`. KV counters distinguish physical reserved pages from live

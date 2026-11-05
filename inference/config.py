@@ -44,6 +44,7 @@ class EngineConfig:
     prefill_chunk_size: Optional[int] = None
     enable_prefill_batching: bool = False
     enable_stream_overlap: bool = True
+    enable_cudnn_attention: bool = False
     enable_decode_metadata_cache: bool = True
     enable_pinned_token_copy: bool = True
     enable_incremental_detokenization: bool = True

@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-04",
+  "gpu": "NVIDIA GeForce RTX 4070 Laptop GPU",
+  "torch": "2.15.0+cu132",
+  "method": "Repeat an identical scaled_dot_product_attention call on unchanged BF16 buffers and count distinct bitwise outputs. Batch 128 decode shapes use Q length 1, GQA groups 4, head dim 128 and a fully valid additive mask; batch 256/context 128 and batch 1/context 8192 are the engine's short-context and long-context extremes.",
+  "calls_per_cell": "10-15",
+  "note": "cuDNN alternatives differ by about one BF16 ulp (0.001 at these magnitudes) and appear intermittently. torch.backends.cudnn.deterministic=True does not change the behavior. The memory-efficient kernel returned one bitwise result in every cell.",
+  "sdpa_microbenchmark_unique_bitwise_outputs": [
+    {"backend": "memory_efficient", "batch": 128, "context": 512, "unique_outputs": 1},
+    {"backend": "cudnn", "batch": 128, "context": 128, "unique_outputs": 1},
+    {"backend": "cudnn", "batch": 128, "context": 256, "unique_outputs": 3},
+    {"backend": "cudnn", "batch": 128, "context": 384, "unique_outputs": 2},
+    {"backend": "cudnn", "batch": 128, "context": 512, "unique_outputs": 3},
+    {"backend": "cudnn", "batch": 128, "context": 640, "unique_outputs": 1},
+    {"backend": "cudnn", "batch": 128, "context": 768, "unique_outputs": 2},
+    {"backend": "cudnn", "batch": 128, "context": 1024, "unique_outputs": 4},
+    {"backend": "cudnn", "batch": 256, "context": 128, "unique_outputs": 1},
+    {"backend": "cudnn", "batch": 1, "context": 8192, "unique_outputs": 1}
+  ],
+  "engine_waves": {
+    "note": "Distinct greedy token hashes across the measured waves of one warmed process.",
+    "batch_256_64_tokens_s1": {"waves": 5, "distinct_hashes": 1},
+    "batch_256_64_tokens_s8": {"waves": 5, "distinct_hashes": 1},
+    "batch_128_512_tokens_s1": {"waves": 3, "distinct_hashes": 3},
+    "batch_128_512_tokens_s8": {"waves": 3, "distinct_hashes": 3}
+  },
+  "decision": "off by default (EngineConfig.enable_cudnn_attention=False); enable with --enable-cudnn-attention, LFM3_API_ENABLE_CUDNN_ATTENTION=true, or --cudnn-attention in the harness."
+}

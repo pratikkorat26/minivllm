@@ -10,6 +10,7 @@ from typing import Callable, List, Optional
 
 import torch
 
+from lfm3.attention import prefer_cudnn_attention
 from lfm3.tokenizer import apply_chat_template
 
 from .config import EngineConfig, SamplingConfig
@@ -39,6 +40,11 @@ class PagedModelExecutor:
     def __init__(self, runtime: object, config: EngineConfig) -> None:
         self.runtime = runtime
         self.config = config
+        # Install the backend preference before the first forward so compiled
+        # graph capture records cuDNN attention kernels.
+        self.cudnn_attention = prefer_cudnn_attention(
+            getattr(config, "enable_cudnn_attention", False)
+        )
         self.use_cuda_graph_buckets = bool(getattr(runtime, "compile_model", False))
         self.graph_batch_capacity = (
             _next_power_of_two(min(config.decode_batch_size, config.max_batch_tokens))
