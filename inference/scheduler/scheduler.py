@@ -18,7 +18,7 @@ from inference.types import (
     StreamEvent,
 )
 
-from .batch import DecodeBatchSelector
+from .batch import DecodeBatchSelector, PrefillBatchSelector
 
 
 @dataclass
@@ -50,6 +50,9 @@ class AsyncScheduler:
         self.selector = DecodeBatchSelector(
             max_batch_size=min(config.decode_batch_size, config.max_batch_tokens),
             selection_window=config.decode_selection_window,
+        )
+        self.prefill_selector = PrefillBatchSelector(
+            max_batch_size=config.decode_batch_size
         )
         self.waiting: Deque[ScheduledRequest] = deque()
         self.prefill: Deque[ScheduledRequest] = deque()
@@ -279,43 +282,13 @@ class AsyncScheduler:
     def _select_prefill_batch(
         self, budget: int, remaining: int
     ) -> list[ScheduledRequest]:
-        """Anchor on the oldest chunk; batch matching rows from this round."""
-        online = self.prefill.popleft()
-        selected = [online]
-        if (
-            online.result.done()
-            or not self.config.enable_prefill_batching
-            or not getattr(
-                self.executor.runtime.model, "supports_batched_prefill", False
-            )
-        ):
-            return selected
-        request = online.request
-        if request.current_input is None:
-            return selected
-        chunk_len = min(budget, int(request.current_input.shape[1]))
-        finishes = request.prompt_cursor + chunk_len >= len(request.prompt_token_ids)
-        limit = min(self.config.decode_batch_size, budget // chunk_len)
-        if limit <= 1:
-            return selected
-        deferred = []
-        for _ in range(min(remaining - 1, len(self.prefill))):
-            candidate = self.prefill.popleft()
-            other = candidate.request
-            if (
-                len(selected) < limit
-                and not candidate.result.done()
-                and other.current_input is not None
-                and int(other.current_input.shape[1]) == chunk_len
-                and other.sampling == request.sampling
-                and (other.prompt_cursor + chunk_len >= len(other.prompt_token_ids))
-                == finishes
-            ):
-                selected.append(candidate)
-            else:
-                deferred.append(candidate)
-        self.prefill.extendleft(reversed(deferred))
-        return selected
+        return self.prefill_selector.select(
+            self.prefill,
+            budget=budget,
+            remaining=remaining,
+            enabled=self.config.enable_prefill_batching
+            and getattr(self.executor.runtime.model, "supports_batched_prefill", False),
+        )
 
     async def _run_prefill(self, budget: int, remaining: int) -> tuple[int, int]:
         selected = self._select_prefill_batch(budget, remaining)
