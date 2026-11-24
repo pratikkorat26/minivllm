@@ -3,7 +3,7 @@ import torch
 from torch import nn
 
 from lfm3.model import Lfm3Model
-from lfm3.quantization import Int8Linear, quantize_model
+from lfm3.quantization import Fp8Linear, Int8Linear, quantize_model
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
@@ -53,6 +53,44 @@ def test_int8_model_keeps_tied_head_and_runs():
     model = Lfm3Model(_tiny_config()).eval()
     model = quantize_model(model, "int8")
     assert model.out_head.weight is model.tok_emb.weight
+
+    ids = torch.tensor([[1, 2, 3, 4]])
+    cache = model.init_paged_kv_caches(num_blocks=4, block_size=2)
+    with torch.inference_mode():
+        logits = model(
+            ids,
+            block_tables=torch.tensor([[0, 1]]),
+            kv_lens=torch.tensor([0]),
+            paged_kv_caches=cache,
+        )
+    assert logits.shape == (1, 1, 64)
+    assert torch.isfinite(logits).all()
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_fp8_linear_matches_float_linear(device):
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA unavailable")
+    torch.manual_seed(0)
+    dtype = torch.float32 if device == "cpu" else torch.bfloat16
+    linear = nn.Linear(256, 64, bias=True).to(device=device, dtype=dtype)
+    with torch.no_grad():
+        linear.weight.normal_(0.0, 0.02)
+        linear.bias.normal_(0.0, 0.02)
+    quantized = Fp8Linear.from_linear(linear)
+    x = torch.randn(3, 5, 256, device=device, dtype=dtype)
+    expected = linear(x)
+    actual = quantized(x)
+    assert actual.shape == expected.shape
+    torch.testing.assert_close(actual, expected, atol=0.05, rtol=0.05)
+
+
+def test_fp8_model_keeps_tied_head_and_skips_gate_proj():
+    torch.manual_seed(0)
+    model = Lfm3Model(_tiny_config()).eval()
+    model = quantize_model(model, "fp8")
+    assert model.out_head.weight is model.tok_emb.weight
+    assert isinstance(model.blocks[1].self_attn.gate_proj, nn.Linear)
 
     ids = torch.tensor([[1, 2, 3, 4]])
     cache = model.init_paged_kv_caches(num_blocks=4, block_size=2)

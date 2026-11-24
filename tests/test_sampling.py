@@ -55,3 +55,43 @@ def test_seeded_sampling_is_repeatable_and_repetition_penalty_respects_sign():
         logits, generator=torch.Generator().manual_seed(12), **kwargs
     )
     assert torch.equal(first, second)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_repetition_penalty_bool_mask_fast_path(device):
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA unavailable")
+    logits = torch.tensor([[2.0, -4.0, 6.0, 8.0], [-2.0, 4.0, -6.0, 8.0]], device=device)
+    mask = torch.tensor(
+        [[True, True, False, False], [False, True, True, False]],
+        dtype=torch.bool,
+        device=device,
+    )
+    actual = apply_repetition_penalty_(logits, mask, 2.0)
+    expected = torch.tensor(
+        [[1.0, -8.0, 6.0, 8.0], [-2.0, 2.0, -12.0, 8.0]], device=device
+    )
+    torch.testing.assert_close(actual, expected)
+
+
+def test_top_k_with_top_p_filters_nucleus_within_top_k():
+    # Top-2 are tokens 0 and 1; with top_p=0.6 only token 0 (~0.88 prob) survives.
+    logits = torch.tensor([[4.0, 2.0, -1.0, -5.0]])
+    gen = torch.Generator().manual_seed(0)
+    sampled = {
+        sample_next_token(logits, temperature=1.0, top_k=2, top_p=0.6, generator=gen).item()
+        for _ in range(10)
+    }
+    assert sampled == {0}
+
+
+def test_top_p_without_top_k_excludes_tail_tokens():
+    # Probabilities: token 0 ~0.468, token 1 ~0.468, token 2 ~0.063, token 3 ~0.001.
+    logits = torch.tensor([[2.0, 2.0, 0.0, -4.0]])
+    gen = torch.Generator().manual_seed(7)
+    sampled = {
+        sample_next_token(logits, temperature=1.0, top_k=0, top_p=0.9, generator=gen).item()
+        for _ in range(25)
+    }
+    assert sampled.issubset({0, 1})
+    assert len(sampled) == 2

@@ -156,3 +156,64 @@ def test_ragged_decode_matches_independent_dense_attention(
             out = (out.transpose(1, 2) * gate).reshape(1, 1, 16)
             expected.append(attention.o_proj(out))
         torch.testing.assert_close(actual, torch.cat(expected), atol=2e-6, rtol=2e-5)
+
+
+def test_bounded_sliding_ring_cache_matches_unbounded_attention():
+    torch.manual_seed(33)
+    window = 4
+    attention = GroupedQueryAttention(
+        16, 4, 2, 4, rope=RotaryEmbedding(4, max_position_embeddings=32), sliding_window=window
+    ).eval()
+    ring_cache = PagedKVCache.empty_sliding(
+        max_slots=4, num_kv_groups=2, window_size=window, head_dim=4,
+        device=torch.device("cpu"), dtype=torch.float32,
+    )
+    paged_cache = PagedKVCache.empty(
+        num_blocks=16, num_kv_groups=2, block_size=2, head_dim=4,
+        device=torch.device("cpu"), dtype=torch.float32,
+    )
+    slots = torch.tensor([3, 1])
+    tables = torch.tensor([[0, 1, 2, 3, 4, 5], [6, 7, 8, 9, 10, 11]])
+    prefill = torch.randn(2, 6, 16)  # q_len=6 > window=4 exercises ring wraparound on prefill.
+    with torch.inference_mode():
+        ring_out = attention(
+            prefill, block_tables=tables, kv_lens=torch.zeros(2, dtype=torch.long),
+            paged_kv_cache=ring_cache, slots=slots, max_seq_len=6,
+        )
+        paged_out = attention(
+            prefill, block_tables=tables, kv_lens=torch.zeros(2, dtype=torch.long),
+            paged_kv_cache=paged_cache, max_seq_len=6,
+        )
+        torch.testing.assert_close(ring_out, paged_out, atol=2e-6, rtol=2e-5)
+        for step in range(4):
+            decode_in = torch.randn(2, 1, 16)
+            kv_lens = torch.full((2,), 6 + step, dtype=torch.long)
+            ring_step = attention(
+                decode_in, block_tables=tables, kv_lens=kv_lens,
+                paged_kv_cache=ring_cache, slots=slots, max_seq_len=7 + step,
+            )
+            paged_step = attention(
+                decode_in, block_tables=tables, kv_lens=kv_lens,
+                paged_kv_cache=paged_cache, max_seq_len=7 + step,
+            )
+            torch.testing.assert_close(ring_step, paged_step, atol=2e-6, rtol=2e-5)
+
+
+def test_model_init_paged_kv_caches_bounds_sliding_layers():
+    from lfm3.model import LFM3_CONFIG_1_7B, Lfm3Model
+
+    model = Lfm3Model(
+        dict(
+            LFM3_CONFIG_1_7B,
+            vocab_size=64, context_length=32, emb_dim=32, hidden_dim=64,
+            n_heads=4, n_kv_groups=2, head_dim=8, n_layers=3,
+            layer_types=["conv", "sliding_attention", "full_attention"],
+            conv_kernel_size=3, sliding_window=4, dtype=torch.float32,
+        )
+    )
+    caches = model.init_paged_kv_caches(num_blocks=8, block_size=2, max_slots=3)
+    assert caches[0] is None
+    assert caches[1].sliding_window == 4
+    assert caches[1].k_blocks.shape == (3, 2, 4, 8)
+    assert caches[2].sliding_window is None
+    assert caches[2].k_blocks.shape == (8, 2, 2, 8)

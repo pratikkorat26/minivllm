@@ -58,3 +58,17 @@ def test_unfinished_stop_prefix_flushes_at_eos_and_usage_includes_eos():
     assert "".join(event.content or "" for event in events) == "hello <S"
     assert next(event.usage for event in events if event.usage).completion_tokens == 3
     assert not engine.aborted and engine.closed
+
+
+def test_stream_without_stop_sequences_yields_all_chunks_and_usage():
+    events, engine = collect(["alpha ", "beta ", "gamma"], None)
+    assert "".join(event.content or "" for event in events) == "alpha beta gamma"
+    assert next(event.usage for event in events if event.usage).completion_tokens == 4
+    assert not engine.aborted and engine.closed
+
+
+def test_split_stop_after_long_prefix_uses_tail_scan():
+    long_prefix = "x" * 64
+    events, engine = collect([long_prefix, " <ST", "OP> trailing"], ["<STOP>"])
+    assert "".join(event.content or "" for event in events) == long_prefix + " "
+    assert engine.aborted and engine.closed

@@ -7,9 +7,10 @@ than delegated to an inference library. Developed and measured on an **RTX 4070
 Laptop, 8 GB, SM89**.
 
 See the dated [project status](docs/status.md) for completed work, validation,
-key architectural decisions, and the next CPU-backed KV-cache objective.
-The latest [execution-overlap report](benchmarks/overlap_optimization/README.md)
-records fully warmed results, output-parity checks and GPU power telemetry.
+and key architectural decisions, and the [optimization report](OPTIMIZATION_REPORT.md)
+for the latest LFM3-1.7B latency, throughput, memory, and parity-gate results.
+The earlier [execution-overlap report](benchmarks/overlap_optimization/README.md)
+records compiled overlap results and GPU power telemetry.
 
 ## Implemented
 
@@ -20,27 +21,32 @@ records fully warmed results, output-parity checks and GPU power telemetry.
 - Physical KV pages, logical block tables, reference counting, LRU eviction under
   memory pressure, cancellation and cleanup.
 - Vectorized KV writes/gathers and RoPE; PyTorch SDPA with grouped-query attention.
-  Sliding layers gather only the keys visible to the current chunk.
-- Packed Q/K/V and FFN gate/up projections, plus opt-in Triton paged decode attention.
+  Sliding-window attention layers use bounded per-slot ring buffers (`window_size=256`).
+- Packed Q/K/V and FFN gate/up projections, plus Triton paged decode attention
+  (enabled by default for `max_seq_len >= 1024` via `LFM3_FUSED_PAGED_ATTENTION=1`).
 - LFM3 short-convolution layers with per-request conv state, mixed with full and
   sliding-window attention layers.
 - Last-position output projection; intermediate chunks skip the output head.
-- Weight-only **int8** quantization (native CUDA weight-only kernel when available)
-  and experimental **int4 NF4** via bitsandbytes.
+- Weight-only **int8** quantization (skipping `gate_proj` for precision), **fp8**
+  (`torch._scaled_mm` on SM89+ CUDA), and experimental **int4 NF4** via bitsandbytes.
+- Pre-uploaded prompt tensors for zero-copy prefill chunking, GPU boolean
+  repetition-penalty masks, and top-k-first nucleus sampling.
 - One model worker, async JSON/SSE, bounded stream buffers, disconnect handling,
-  split stop-string buffering, and shutdown that joins in-flight work.
+  O(N) tail-bounded split stop-string buffering, and shutdown that joins in-flight work.
 - Streaming text emission overlaps GPU computation; sampled IDs use a reusable
-  pinned host buffer fenced by a CUDA event. Stable compiled decode cohorts
-  reuse device metadata, and incremental decoding handles Unicode tails.
+  pinned host buffer fenced by a CUDA event. Stable decode cohorts (eager and
+  compiled) reuse device metadata, and incremental decoding handles Unicode tails.
 - Optional exact greedy decode chunks reduce host synchronization. The default
   is one step per round; larger chunks trade streaming cadence for throughput.
-- TTFT/TPOT, scheduler/KV metrics, saved GPU measurements, independent reference tests.
+- TTFT/TPOT, scheduler/KV metrics, saved GPU measurements, independent reference tests,
+  and a 225-test parity & regression gate.
 
-**Fused paged attention is experimental and opt-in.** Set
-`LFM3_FUSED_PAGED_ATTENTION=1` for direct-page CUDA decode with Triton. Prefill,
-CPU, and unsupported decode shapes use dense-gather PyTorch SDPA. Batched ragged
-prefill, preemption,
-speculative decoding and multi-GPU execution are outside this version.
+**Triton paged decode attention is enabled by default for long contexts.**
+`LFM3_FUSED_PAGED_ATTENTION` defaults to `1` and dispatches direct-page Triton
+decode when `max_seq_len >= 1024`. Set `LFM3_FUSED_PAGED_ATTENTION=0` to force
+dense-gather PyTorch SDPA. Prefill, CPU, and shorter decode shapes use SDPA.
+Batched ragged prefill, preemption, speculative decoding and multi-GPU execution
+are outside this version.
 
 **Prefix caching is disabled for LFM3.** LFM3's short-convolution layers keep
 recurrent state outside the paged KV cache. Reusing KV pages without a matching
@@ -112,7 +118,8 @@ between rounds. See [execution and ownership](docs/architecture.md#optional-exac
 | Mode | Weights | CUDA path | Notes |
 |---|---|---|---|
 | `none` | BF16 | BF16 linear | Reference quality |
-| `int8` | Symmetric int8, per output channel | `torch._weight_int8pack_mm` | Recommended memory/quality tradeoff |
+| `int8` | Symmetric int8, per output channel | `torch._weight_int8pack_mm` | Skips `gate_proj`; recommended memory/quality tradeoff |
+| `fp8` | `float8_e4m3fn`, per output channel | `torch._scaled_mm` (SM89+) | Skips `gate_proj`; native FP8 tensor cores |
 | `int4` | NF4 via bitsandbytes, double quantized | bitsandbytes 4-bit | Experimental; quality caveat |
 
 Embeddings and the tied output head remain BF16: the output head shares storage

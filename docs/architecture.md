@@ -117,10 +117,11 @@ priority before the first forward when
 dispatcher still falls back per shape, and cuDNN reductions can be
 non-reproducible at some shapes. Compiled artifacts are kept in a
 separate `minivllm-cudnn-attention` cache directory because Inductor's graph key
-does not include the backend priority. Dense gather is still an O(context)
-allocation/copy for full-attention layers. Sliding layers gather at most
-`window + chunk_length - 1` keys per row, starting at each row's own window;
-their masks retain absolute positions for causal and ragged-length checks.
+does not include the backend priority. Dense gather is still used for shorter contexts and prefill, while
+`LFM3_FUSED_PAGED_ATTENTION=1` (default) dispatches full-attention decode to the
+Triton paged-decode kernel for `max_seq_len >= 1024`. Sliding-window layers
+allocate bounded per-slot ring buffers (`[max_slots, num_kv_groups, window_size, head_dim]`)
+instead of full-context paged blocks.
 In compiled single-token decode, short convolutions use an FP32 dot product
 over the recurrent state and new input, allowing pointwise fusion. Eager and
 multi-token execution retain the general depthwise convolution.
@@ -129,9 +130,10 @@ sampled decode IDs transfer to CPU once per batch or bounded greedy chunk. Inter
 skip vocabulary projection.
 
 CUDA BF16 and CPU FP32 are supported without Hopper-specific instructions. The
-optional int8 path stores per-output-channel int8 weights and uses PyTorch's
-weight-only int8 kernel on CUDA when available; otherwise it dequantizes before
-the matmul. int4 uses bitsandbytes NF4 and is experimental.
+optional `int8` path stores per-output-channel int8 weights (skipping `gate_proj`)
+and uses PyTorch's weight-only int8 kernel on CUDA when available; `fp8` uses
+`torch.float8_e4m3fn` with `torch._scaled_mm` on SM89+ CUDA. `int4` uses
+bitsandbytes NF4 and is experimental.
 
 Opt-in `torch.compile(mode="reduce-overhead")` owns CUDA graph capture/replay.
 The executor marks persistent KV and convolution buffers as static-address inputs
@@ -149,11 +151,10 @@ including failures. Compilation remains experimental; warmup and capture costs
 are excluded from steady-state measurements. There is no manually managed CUDA
 graph implementation.
 
-Repetition penalties upload one batch of row/token indices instead of launching
-copies and indexing operations per request. Tensor histories use gather/scatter
-on the device; duplicate IDs receive the penalty once. Logits are copied only
-when the penalty will mutate them. A completed prefill batch, like decode, copies
-sampled IDs to the CPU once before updating per-request state.
+Repetition penalties maintain per-request GPU boolean masks (updated one token
+per step) instead of rebuilding Python index lists every step, and `top_k`
+sampling runs `torch.topk` before nucleus filtering. A completed prefill batch,
+like decode, copies sampled IDs to the CPU once before updating per-request state.
 
 ### Overlap and stable decode metadata
 
@@ -241,6 +242,6 @@ include both phases and scheduling. See the dated [status](status.md) for the
 validated configuration and remaining work.
 
 Limits: one model/device/tenant, synchronous tokenization, Python bookkeeping,
-dense gather for full attention, full KV storage even for sliding layers, no prefix cache for LFM3,
+dense gather for short-context/prefill full attention, no prefix cache for LFM3,
 no preemption, and recorded BF16 reference differences. See
-[performance and validation](../benchmarks/README.md).
+[performance and validation](../benchmarks/README.md) and [optimization report](../OPTIMIZATION_REPORT.md).

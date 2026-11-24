@@ -22,7 +22,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-QUANTIZATION_CHOICES = ("none", "int8", "int4")
+QUANTIZATION_CHOICES = ("none", "int8", "int4", "fp8")
 
 
 class Int8Linear(nn.Module):
@@ -91,6 +91,84 @@ class Int8Linear(nn.Module):
         return out.reshape(*original_shape[:-1], self.out_features)
 
 
+class Fp8Linear(nn.Module):
+    """Linear layer with float8_e4m3fn weights using SM89 _scaled_mm on CUDA."""
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.register_buffer(
+            "qweight",
+            torch.empty(out_features, in_features, dtype=torch.float8_e4m3fn, device=device),
+        )
+        self.register_buffer(
+            "weight_scale",
+            torch.ones(1, dtype=torch.float32, device=device),
+        )
+        if bias:
+            self.bias = nn.Parameter(
+                torch.empty(out_features, device=device, dtype=dtype)
+            )
+        else:
+            self.register_parameter("bias", None)
+
+    @classmethod
+    @torch.no_grad()
+    def from_linear(cls, linear: nn.Linear) -> "Fp8Linear":
+        quantized = cls(
+            linear.in_features,
+            linear.out_features,
+            bias=linear.bias is not None,
+            device=linear.weight.device,
+            dtype=linear.weight.dtype,
+        )
+        weight = linear.weight.float()
+        scale = (weight.abs().amax().clamp_min(1e-8) / 448.0).reshape(1)
+        qweight = (weight / scale).clamp(-448.0, 448.0).to(torch.float8_e4m3fn)
+        quantized.qweight.copy_(qweight)
+        quantized.weight_scale.copy_(scale)
+        if linear.bias is not None:
+            quantized.bias.copy_(linear.bias)
+        return quantized
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        original_shape = x.shape
+        flat = x.reshape(-1, self.in_features)
+        if not flat.is_contiguous():
+            flat = flat.contiguous()
+
+        if (
+            flat.device.type == "cuda"
+            and hasattr(torch, "_scaled_mm")
+            and self.in_features % 16 == 0
+            and self.out_features % 16 == 0
+        ):
+            scale_x = (flat.float().abs().amax().clamp_min(1e-8) / 448.0).reshape(1)
+            x_fp8 = (flat.float() / scale_x).clamp(-448.0, 448.0).to(torch.float8_e4m3fn)
+            out = torch._scaled_mm(
+                x_fp8,
+                self.qweight.t(),
+                scale_a=scale_x,
+                scale_b=self.weight_scale,
+                out_dtype=flat.dtype,
+            )
+        else:
+            weight = self.qweight.to(flat.dtype) * self.weight_scale.to(flat.dtype)
+            out = F.linear(flat, weight)
+
+        if self.bias is not None:
+            out = out + self.bias
+        return out.reshape(*original_shape[:-1], self.out_features)
+
+
 def _replace_linear_modules(
     module: nn.Module,
     replace: Callable[[nn.Linear], nn.Module],
@@ -134,6 +212,21 @@ def quantize_model_int8(model: nn.Module) -> nn.Module:
         model,
         lambda linear: Int8Linear.from_linear(linear),
         skip_names=skip_names,
+        skip_suffixes=("gate_proj",),
+    )
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return model
+
+
+def quantize_model_fp8(model: nn.Module) -> nn.Module:
+    """Replace every non-tied Linear with an :class:`Fp8Linear` in place."""
+    skip_names = _tied_output_head_name(model)
+    _replace_linear_modules(
+        model,
+        lambda linear: Fp8Linear.from_linear(linear),
+        skip_names=skip_names,
+        skip_suffixes=("gate_proj",),
     )
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -192,6 +285,8 @@ def quantize_model(
         return model
     if quantization == "int8":
         return quantize_model_int8(model)
+    if quantization == "fp8":
+        return quantize_model_fp8(model)
     if quantization == "int4":
         if not torch.cuda.is_available():
             raise ValueError("int4 quantization requires CUDA")

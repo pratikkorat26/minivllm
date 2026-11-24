@@ -1,9 +1,16 @@
-# Project status — updated November 4, 2026
+# Project status — updated November 23, 2026
 
-Latest: an opt-in cuDNN attention switch is implemented and validated. It
-raises the November 3 overlap workloads while preserving audit scores, and
-remains off by default to keep temperature=0 output reproducible. The sections
-below preserve their original workloads and validation counts.
+Latest: end-to-end LFM3-1.7B memory, decode, and executor optimization pass
+verified on RTX 4070 Laptop (8 GB). See [OPTIMIZATION_REPORT.md](../OPTIMIZATION_REPORT.md)
+for full before/after tables and parity-gate results.
+
+## November 23: LFM3-1.7B memory, decode & executor optimization
+
+- **Bounded sliding-window KV ring buffers** (`lfm3/paged_kv.py`, `lfm3/model.py`, `lfm3/attention.py`, `inference/executor.py`): 5 sliding-window attention layers allocate per-slot ring buffers (`window_size=256`) instead of full-context paged blocks, cutting weights + KV allocation from `3.917 GB` to `3.642 GB` (`-0.275 GB`).
+- **Default Triton paged decode for long contexts** (`lfm3/attention.py`): `LFM3_FUSED_PAGED_ATTENTION=1` is enabled by default for `max_seq_len >= 1024` (with precomputed RoPE/write indices in `Lfm3Model.forward`), boosting decode throughput at `16384` (`38.9 -> 51.7 tok/s`, `1.33x`) and `32768` (`30.5 -> 49.6 tok/s`, `1.63x`) while reducing `32768` total latency from `7.348s` to `6.544s`.
+- **Quantization** (`lfm3/quantization.py`): `int8` now skips `gate_proj` for precision parity, and `fp8` (`torch.float8_e4m3fn` + `torch._scaled_mm`) is supported on SM89+ CUDA.
+- **Executor, sampling & streaming fast-paths** (`inference/executor.py`, `inference/sampling/sampler.py`, `app/service.py`): pre-uploaded prompt tensors for zero-copy prefill slicing, GPU boolean repetition-penalty masks, top-k-first nucleus sampling, and O(N) tail-bounded streaming stop-sequence scanning.
+- **Validation**: `RUN_REAL_ENGINE_TESTS=1 pytest -v` passes **225 tests** (5 opt-in skipped), including bit-exact greedy parity against `baseline_parity.json` in `tests/test_lfm3_parity_gate.py`.
 
 ## November 4: opt-in cuDNN attention
 
@@ -71,11 +78,12 @@ machine-readable report is [software_summary.json](../benchmarks/software_summar
    sampling settings and completion phase. Prior KV lengths can differ. The
    scheduler enforces the shared token budget and at most one chunk per request
    per round. The synchronous executor runs the cohort in one model forward.
-2. **Sliding attention bounds reads, not physical storage.** Gather width is at
-   most `window + chunk_length - 1`, with independent starting positions for each
-   row. Masks retain absolute causal positions. Full-attention gathers and the
-   physical page layout remain unchanged; sliding layers still reserve full KV
-   history in this version.
+2. **Sliding attention bounds physical storage via per-slot ring buffers.**
+   `Lfm3Model` declares `supports_bounded_sliding_kv = True`, allocating
+   `[max_slots, num_kv_groups, window_size, head_dim]` ring buffers for the 5
+   sliding-window layers instead of full-context paged blocks. Full-attention
+   layers continue to use paged KV blocks and dispatch to Triton paged decode
+   when `max_seq_len >= 1024`.
 3. **Compiled one-token convolution uses a short dot product.** FP32 accumulation
    allows PyTorch to fuse surrounding pointwise work. Eager and multi-token
    execution use the existing depthwise convolution. Per-request state slots

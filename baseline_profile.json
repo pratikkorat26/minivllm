@@ -1,0 +1,402 @@
+{
+  "profiles": [
+    {
+      "context_tokens": 512,
+      "prefill_wall_s": 0.0647,
+      "decode_step_wall_ms": 20.497,
+      "decode_cuda_kernel_sum_ms_per_step": 65.021,
+      "decode_kernel_launches_per_step": 4864,
+      "layer_breakdown_ms_per_step": {
+        "feed_forward": 10.544,
+        "out_head": 2.176,
+        "conv": 2.079,
+        "full_attention": 1.521,
+        "rms_norm": 1.431,
+        "sliding_attention": 1.191
+      },
+      "top_cuda_ops_us_per_3steps": [
+        {
+          "name": "aten::linear",
+          "count": 324,
+          "cuda_total_us": 43608.6,
+          "cpu_self_us": 244.3
+        },
+        {
+          "name": "aten::matmul",
+          "count": 324,
+          "cuda_total_us": 43608.6,
+          "cpu_self_us": 451.0
+        },
+        {
+          "name": "aten::mm",
+          "count": 324,
+          "cuda_total_us": 43608.6,
+          "cpu_self_us": 2697.0
+        },
+        {
+          "name": "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo",
+          "count": 219,
+          "cuda_total_us": 34209.5,
+          "cpu_self_us": 0
+        },
+        {
+          "name": "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo",
+          "count": 105,
+          "cuda_total_us": 9399.1,
+          "cpu_self_us": 0
+        },
+        {
+          "name": "aten::mul",
+          "count": 1029,
+          "cuda_total_us": 1344.9,
+          "cpu_self_us": 3390.4
+        },
+        {
+          "name": "aten::copy_",
+          "count": 975,
+          "cuda_total_us": 1005.8,
+          "cpu_self_us": 2057.9
+        },
+        {
+          "name": "aten::to",
+          "count": 1341,
+          "cuda_total_us": 946.3,
+          "cpu_self_us": 405.1
+        },
+        {
+          "name": "aten::_to_copy",
+          "count": 921,
+          "cuda_total_us": 946.3,
+          "cpu_self_us": 848.9
+        },
+        {
+          "name": "aten::scaled_dot_product_attention",
+          "count": 33,
+          "cuda_total_us": 883.6,
+          "cpu_self_us": 237.6
+        },
+        {
+          "name": "aten::_scaled_dot_product_efficient_attention",
+          "count": 33,
+          "cuda_total_us": 844.8,
+          "cpu_self_us": 115.3
+        },
+        {
+          "name": "aten::_efficient_attention_forward",
+          "count": 33,
+          "cuda_total_us": 844.8,
+          "cpu_self_us": 205.8
+        },
+        {
+          "name": "fmha_cutlassF_bf16_aligned_64x128_rf_sm80(PyTorchMemEffAttention::AttentionKerne",
+          "count": 33,
+          "cuda_total_us": 804.5,
+          "cpu_self_us": 0
+        },
+        {
+          "name": "aten::add",
+          "count": 744,
+          "cuda_total_us": 781.1,
+          "cpu_self_us": 2491.6
+        },
+        {
+          "name": "aten::mean",
+          "count": 357,
+          "cuda_total_us": 735.9,
+          "cpu_self_us": 1651.5
+        }
+      ],
+      "top_self_cpu_ops_us_per_3steps": [
+        {
+          "name": "cudaLaunchKernel",
+          "count": 5331,
+          "cpu_self_us": 11383.0,
+          "cuda_total_us": 0
+        },
+        {
+          "name": "cudaEventSynchronize",
+          "count": 3,
+          "cpu_self_us": 8764.3,
+          "cuda_total_us": 0
+        },
+        {
+          "name": "aten::mul",
+          "count": 1029,
+          "cpu_self_us": 3390.4,
+          "cuda_total_us": 1344.9
+        },
+        {
+          "name": "aten::mm",
+          "count": 324,
+          "cpu_self_us": 2697.0,
+          "cuda_total_us": 43608.6
+        },
+        {
+          "name": "aten::add",
+          "count": 744,
+          "cpu_self_us": 2491.6,
+          "cuda_total_us": 781.1
+        },
+        {
+          "name": "aten::copy_",
+          "count": 975,
+          "cpu_self_us": 2057.9,
+          "cuda_total_us": 1005.8
+        },
+        {
+          "name": "aten::empty_strided",
+          "count": 921,
+          "cpu_self_us": 1748.8,
+          "cuda_total_us": 0
+        },
+        {
+          "name": "aten::mean",
+          "count": 357,
+          "cpu_self_us": 1651.5,
+          "cuda_total_us": 735.9
+        },
+        {
+          "name": "aten::pow",
+          "count": 357,
+          "cpu_self_us": 1467.4,
+          "cuda_total_us": 371.3
+        },
+        {
+          "name": "aten::index",
+          "count": 189,
+          "cpu_self_us": 1138.1,
+          "cuda_total_us": 724.6
+        },
+        {
+          "name": "aten::rsqrt",
+          "count": 357,
+          "cpu_self_us": 1052.3,
+          "cuda_total_us": 383.9
+        },
+        {
+          "name": "aten::_to_copy",
+          "count": 921,
+          "cpu_self_us": 848.9,
+          "cuda_total_us": 946.3
+        },
+        {
+          "name": "aten::empty",
+          "count": 483,
+          "cpu_self_us": 785.1,
+          "cuda_total_us": 0
+        },
+        {
+          "name": "Activity Buffer Request",
+          "count": 1,
+          "cpu_self_us": 629.3,
+          "cuda_total_us": 0
+        },
+        {
+          "name": "aten::as_strided",
+          "count": 2415,
+          "cpu_self_us": 591.7,
+          "cuda_total_us": 0
+        }
+      ]
+    },
+    {
+      "context_tokens": 16384,
+      "prefill_wall_s": 2.2028,
+      "decode_step_wall_ms": 27.017,
+      "decode_cuda_kernel_sum_ms_per_step": 87.688,
+      "decode_kernel_launches_per_step": 4786,
+      "layer_breakdown_ms_per_step": {
+        "feed_forward": 9.393,
+        "full_attention": 8.089,
+        "rms_norm": 2.736,
+        "out_head": 2.178,
+        "conv": 2.105,
+        "sliding_attention": 1.216
+      },
+      "top_cuda_ops_us_per_3steps": [
+        {
+          "name": "aten::linear",
+          "count": 324,
+          "cuda_total_us": 44781.1,
+          "cpu_self_us": 426.0
+        },
+        {
+          "name": "aten::matmul",
+          "count": 324,
+          "cuda_total_us": 44781.1,
+          "cpu_self_us": 702.8
+        },
+        {
+          "name": "aten::mm",
+          "count": 324,
+          "cuda_total_us": 44781.1,
+          "cpu_self_us": 4079.7
+        },
+        {
+          "name": "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo",
+          "count": 219,
+          "cuda_total_us": 33030.8,
+          "cpu_self_us": 0
+        },
+        {
+          "name": "aten::scaled_dot_product_attention",
+          "count": 33,
+          "cuda_total_us": 14258.5,
+          "cpu_self_us": 378.4
+        },
+        {
+          "name": "aten::_scaled_dot_product_efficient_attention",
+          "count": 33,
+          "cuda_total_us": 14235.3,
+          "cpu_self_us": 144.4
+        },
+        {
+          "name": "aten::_efficient_attention_forward",
+          "count": 33,
+          "cuda_total_us": 14235.3,
+          "cpu_self_us": 331.2
+        },
+        {
+          "name": "fmha_cutlassF_bf16_aligned_64x128_rf_sm80(PyTorchMemEffAttention::AttentionKerne",
+          "count": 33,
+          "cuda_total_us": 14205.3,
+          "cpu_self_us": 0
+        },
+        {
+          "name": "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo",
+          "count": 105,
+          "cuda_total_us": 11750.3,
+          "cpu_self_us": 0
+        },
+        {
+          "name": "aten::index",
+          "count": 189,
+          "cuda_total_us": 5597.9,
+          "cpu_self_us": 1726.2
+        },
+        {
+          "name": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<a",
+          "count": 105,
+          "cuda_total_us": 5385.3,
+          "cpu_self_us": 0
+        },
+        {
+          "name": "aten::mul",
+          "count": 1029,
+          "cuda_total_us": 1362.1,
+          "cpu_self_us": 5408.9
+        },
+        {
+          "name": "aten::copy_",
+          "count": 903,
+          "cuda_total_us": 978.9,
+          "cpu_self_us": 3020.1
+        },
+        {
+          "name": "aten::to",
+          "count": 1341,
+          "cuda_total_us": 876.9,
+          "cpu_self_us": 629.6
+        },
+        {
+          "name": "aten::_to_copy",
+          "count": 855,
+          "cuda_total_us": 876.9,
+          "cpu_self_us": 1509.9
+        }
+      ],
+      "top_self_cpu_ops_us_per_3steps": [
+        {
+          "name": "cudaLaunchKernel",
+          "count": 5259,
+          "cpu_self_us": 16204.4,
+          "cuda_total_us": 0
+        },
+        {
+          "name": "cudaEventSynchronize",
+          "count": 3,
+          "cpu_self_us": 9063.3,
+          "cuda_total_us": 0
+        },
+        {
+          "name": "aten::mul",
+          "count": 1029,
+          "cpu_self_us": 5408.9,
+          "cuda_total_us": 1362.1
+        },
+        {
+          "name": "aten::mm",
+          "count": 324,
+          "cpu_self_us": 4079.7,
+          "cuda_total_us": 44781.1
+        },
+        {
+          "name": "aten::add",
+          "count": 744,
+          "cpu_self_us": 3938.6,
+          "cuda_total_us": 795.9
+        },
+        {
+          "name": "aten::copy_",
+          "count": 903,
+          "cpu_self_us": 3020.1,
+          "cuda_total_us": 978.9
+        },
+        {
+          "name": "aten::mean",
+          "count": 357,
+          "cpu_self_us": 2545.9,
+          "cuda_total_us": 743.1
+        },
+        {
+          "name": "aten::empty_strided",
+          "count": 855,
+          "cpu_self_us": 2514.6,
+          "cuda_total_us": 0
+        },
+        {
+          "name": "aten::pow",
+          "count": 357,
+          "cpu_self_us": 2250.3,
+          "cuda_total_us": 369.6
+        },
+        {
+          "name": "aten::index",
+          "count": 189,
+          "cpu_self_us": 1726.2,
+          "cuda_total_us": 5597.9
+        },
+        {
+          "name": "aten::rsqrt",
+          "count": 357,
+          "cpu_self_us": 1659.6,
+          "cuda_total_us": 383.7
+        },
+        {
+          "name": "aten::_to_copy",
+          "count": 855,
+          "cpu_self_us": 1509.9,
+          "cuda_total_us": 876.9
+        },
+        {
+          "name": "aten::empty",
+          "count": 477,
+          "cpu_self_us": 1223.2,
+          "cuda_total_us": 0
+        },
+        {
+          "name": "aten::as_strided",
+          "count": 2403,
+          "cpu_self_us": 829.8,
+          "cuda_total_us": 0
+        },
+        {
+          "name": "aten::cat",
+          "count": 108,
+          "cpu_self_us": 789.8,
+          "cuda_total_us": 219.9
+        }
+      ]
+    }
+  ]
+}

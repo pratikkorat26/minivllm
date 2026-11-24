@@ -68,10 +68,16 @@ class PagedModelExecutor:
             enable_prefix_cache=config.enable_prefix_cache,
             max_prefix_cache_entries=config.max_prefix_cache_entries,
         )
+        kv_kwargs = {}
+        if getattr(runtime.model, "supports_bounded_sliding_kv", False):
+            kv_kwargs["max_slots"] = (
+                config.max_concurrent_requests + self.graph_batch_capacity
+            )
         self.paged_kv_caches = runtime.model.init_paged_kv_caches(
             num_blocks=self.capacity.num_blocks + self.graph_batch_capacity,
             block_size=self.capacity.block_size,
             device=runtime.device,
+            **kv_kwargs,
         )
 
         self.conv_state_caches = None
@@ -93,6 +99,8 @@ class PagedModelExecutor:
         self._decode_metadata = None
         self._token_copy_buffer = None
         self._token_copy_event = None
+        self._prompt_tensors: dict[object, torch.Tensor] = {}
+        self._rep_penalty_masks: dict[object, torch.Tensor] = {}
         self.last_decode_step_count = 1
 
     def _mark_cache_addresses_static(self) -> None:
@@ -176,8 +184,8 @@ class PagedModelExecutor:
         request.generated_ids = []
         request.emitted_text = ""
         request.streaming_text = None
-        request.all_token_ids = list(request.prompt_token_ids)
-        request.seen_token_ids = set(request.prompt_token_ids)
+        request.all_token_ids = []
+        request.seen_token_ids = set()
         request.block_table = []
         cached_tokens = self.capacity.init_request_from_cache(request, scope="default")
         if self.capacity.prefix_cache_enabled:
@@ -197,6 +205,12 @@ class PagedModelExecutor:
         self._acquire_conv_slot(request)
         request.prefill_time_s = request.decode_time_s = 0.0
         request.prefill_steps = request.decode_steps = 0
+        if request.prompt_cursor < len(request.prompt_token_ids):
+            self._prompt_tensors[request.request_id] = torch.tensor(
+                request.prompt_token_ids,
+                dtype=torch.long,
+                device=self.runtime.device,
+            ).unsqueeze(0)
         request.current_input = self._next_prefill_chunk(request)
 
     def finish(
@@ -207,6 +221,8 @@ class PagedModelExecutor:
         request.finished_at_s = time.perf_counter()
         self.capacity.release(request)
         self._release_conv_slot(request)
+        self._prompt_tensors.pop(request.request_id, None)
+        self._rep_penalty_masks.pop(request.request_id, None)
 
     def result(self, request: RequestState) -> GenerateResult:
         first = request.first_scheduled_at_s or request.created_at_s
@@ -290,6 +306,7 @@ class PagedModelExecutor:
                 request.current_input = self._next_prefill_chunk(request)
             return []
         for request in eligible:
+            self._prompt_tensors.pop(request.request_id, None)
             self.capacity.cache_prefix(
                 "default", request.prompt_token_ids, request.block_table
             )
@@ -334,7 +351,6 @@ class PagedModelExecutor:
         """Bound exact greedy steps by fairness, reservation and context limits."""
         if (
             self.config.decode_steps_per_round == 1
-            or not self.use_cuda_graph_buckets
             or any(
                 r.sampling.temperature != 0 or r.sampling.repetition_penalty != 1
                 for r in requests
@@ -362,7 +378,10 @@ class PagedModelExecutor:
         outputs, inputs = [], None
         for _ in range(steps):
             logits = self._forward(
-                requests, use_compiled=True, pad_decode_batch=True, input_batch=inputs
+                requests,
+                use_compiled=self.use_cuda_graph_buckets,
+                pad_decode_batch=True,
+                input_batch=inputs,
             )
             inputs = self._sample(logits, requests)
             outputs.append(inputs)
@@ -463,12 +482,23 @@ class PagedModelExecutor:
     def _next_prefill_chunk(self, request: RequestState):
         if request.prompt_cursor >= len(request.prompt_token_ids):
             return None
-        size = min(
-            self.config.max_batch_tokens,
-            self.config.prefill_chunk_size or self.config.max_batch_tokens,
+        size = max(
+            1,
+            int(
+                min(
+                    self.config.max_batch_tokens,
+                    self.config.prefill_chunk_size or self.config.max_batch_tokens,
+                )
+            ),
         )
+        prompt_tensor = self._prompt_tensors.get(request.request_id)
+        if prompt_tensor is not None:
+            chunk = prompt_tensor[
+                :, request.prompt_cursor : request.prompt_cursor + size
+            ]
+            return chunk if chunk.shape[1] > 0 else None
         ids = request.prompt_token_ids[
-            request.prompt_cursor : request.prompt_cursor + max(1, int(size))
+            request.prompt_cursor : request.prompt_cursor + size
         ]
         return (
             torch.tensor(ids, device=self.runtime.device).unsqueeze(0) if ids else None
@@ -476,10 +506,13 @@ class PagedModelExecutor:
 
     def _eligible(self, requests: List[RequestState]) -> List[RequestState]:
         eligible = []
+        limit = self.context_limit()
         for request in requests:
             if request.current_input is None:
                 self.finish(request, "error", "request tensors are not initialized")
-            elif len(request.all_token_ids) >= self.context_limit():
+            elif (
+                len(request.prompt_token_ids) + len(request.generated_ids) >= limit
+            ):
                 self.finish(request, "context_limit")
             elif self.capacity.ensure_capacity(
                 request, request.live_kv_tokens + int(request.current_input.shape[1])
@@ -498,11 +531,12 @@ class PagedModelExecutor:
         pad_decode_batch: bool = False,
         input_batch: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        inputs = (
-            input_batch
-            if input_batch is not None
-            else torch.cat([request.current_input for request in eligible], dim=0)
-        )
+        if input_batch is not None:
+            inputs = input_batch
+        elif len(eligible) == 1:
+            inputs = eligible[0].current_input
+        else:
+            inputs = torch.cat([request.current_input for request in eligible], dim=0)
         active_batch_size = len(eligible)
         padded_batch_size = active_batch_size
         if pad_decode_batch and self.use_cuda_graph_buckets:
@@ -530,9 +564,7 @@ class PagedModelExecutor:
             padded_batch_size,
             width,
             cache_metadata=(
-                pad_decode_batch
-                and use_compiled
-                and self.config.enable_decode_metadata_cache
+                pad_decode_batch and self.config.enable_decode_metadata_cache
             ),
         )
         conv_kwargs = (
@@ -590,7 +622,14 @@ class PagedModelExecutor:
 
         signature = (
             (
-                tuple((id(r), tuple(r.block_table)) for r in eligible),
+                tuple(
+                    (
+                        id(r),
+                        len(r.block_table),
+                        r.block_table[-1] if r.block_table else -1,
+                    )
+                    for r in eligible
+                ),
                 padded_batch_size,
                 width,
                 None if slots is None else tuple(slots),
@@ -649,18 +688,49 @@ class PagedModelExecutor:
         )
         return tables, lengths, slot_tensor
 
+    def _rep_penalty_mask(
+        self, request: RequestState, vocab_size: int, device: torch.device
+    ) -> torch.Tensor:
+        mask = self._rep_penalty_masks.get(request.request_id)
+        if mask is None or mask.shape[0] != vocab_size or mask.device != device:
+            mask = torch.zeros(vocab_size, dtype=torch.bool, device=device)
+            if request.prompt_token_ids:
+                ids = torch.tensor(
+                    request.prompt_token_ids, dtype=torch.long, device=device
+                )
+                mask[ids] = True
+            if request.generated_ids:
+                gen_ids = torch.tensor(
+                    request.generated_ids, dtype=torch.long, device=device
+                )
+                mask[gen_ids] = True
+            if request.seen_token_ids:
+                seen = torch.tensor(
+                    list(request.seen_token_ids), dtype=torch.long, device=device
+                )
+                mask[seen] = True
+            self._rep_penalty_masks[request.request_id] = mask
+        return mask
+
     def _sample(
         self, logits: torch.Tensor, requests: List[RequestState]
     ) -> torch.Tensor:
         # Model already returns [B, 1, V] when logits_last_only=True.
         next_logits = logits[:, -1, :]
-        if requests[0].sampling.repetition_penalty > 1.0:
+        penalty = requests[0].sampling.repetition_penalty
+        if penalty > 1.0:
             next_logits = next_logits.clone()
-        next_logits = apply_repetition_penalty_(
-            next_logits,
-            [r.seen_token_ids for r in requests],
-            penalty=requests[0].sampling.repetition_penalty,
-        )
+            vocab_size = next_logits.shape[-1]
+            masks = torch.stack(
+                [
+                    self._rep_penalty_mask(r, vocab_size, next_logits.device)
+                    for r in requests
+                ],
+                dim=0,
+            )
+            next_logits = apply_repetition_penalty_(
+                next_logits, masks, penalty=penalty
+            )
         if all(r.sampling_generator is None for r in requests):
             return sample_next_token(
                 next_logits,
@@ -702,8 +772,15 @@ class PagedModelExecutor:
         request.last_token_at_s = now
         request.generated_ids.extend(next_ids)
         history = next_ids[:-1] if stopped else next_ids
-        request.all_token_ids.extend(history)
-        request.seen_token_ids.update(history)
+        if history:
+            mask = self._rep_penalty_masks.get(request.request_id)
+            if mask is not None:
+                if len(history) == 1:
+                    mask[history[0]] = True
+                else:
+                    mask[
+                        torch.tensor(history, dtype=torch.long, device=mask.device)
+                    ] = True
         if stopped:
             self.finish(request, "eos")
         elif len(request.generated_ids) >= request.max_new_tokens:

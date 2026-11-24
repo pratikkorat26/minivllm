@@ -119,6 +119,8 @@ class TransformerBlock(nn.Module):
         conv_state: Optional[torch.Tensor] = None,
         conv_slots: Optional[torch.Tensor] = None,
         max_seq_len: Optional[int] = None,
+        rope_cos_sin: Optional[tuple] = None,
+        write_indices: Optional[tuple] = None,
     ) -> torch.Tensor:
         residual = x
         h = self.operator_norm(x)
@@ -129,6 +131,9 @@ class TransformerBlock(nn.Module):
                 kv_lens=kv_lens,
                 paged_kv_cache=paged_kv_cache,
                 max_seq_len=max_seq_len,
+                slots=conv_slots,
+                rope_cos_sin=rope_cos_sin,
+                write_indices=write_indices,
             )
         else:
             h = self.conv(h, conv_state=conv_state, slots=conv_slots)
@@ -142,6 +147,7 @@ class TransformerBlock(nn.Module):
 
 class Lfm3Model(nn.Module):
     supports_batched_prefill = True
+    supports_bounded_sliding_kv = True
     # Reusing paged KV prefixes would also require restoring the short-conv
     # recurrent state at the cache boundary; not implemented yet.
     supports_prefix_cache = False
@@ -223,6 +229,7 @@ class Lfm3Model(nn.Module):
         self.num_kv_groups = n_kv_groups
         self.head_dim = head_dim
         self.kernel_size = conv_kernel_size
+        self.sliding_window = sliding_window
         self.dtype = dtype or self.out_head.weight.dtype
 
         self.rope_sliding = rope_sliding
@@ -234,12 +241,25 @@ class Lfm3Model(nn.Module):
         num_blocks: int,
         block_size: int,
         device: Optional[torch.device] = None,
+        max_slots: Optional[int] = None,
     ) -> List[Optional[PagedKVCache]]:
         cache_device = device or self.tok_emb.weight.device
         caches: List[Optional[PagedKVCache]] = []
         for layer_type in self.layer_types:
             if layer_type == "conv":
                 caches.append(None)
+                continue
+            if layer_type == "sliding_attention" and max_slots is not None:
+                caches.append(
+                    PagedKVCache.empty_sliding(
+                        max_slots=max_slots,
+                        num_kv_groups=self.num_kv_groups,
+                        window_size=self.sliding_window,
+                        head_dim=self.head_dim,
+                        device=cache_device,
+                        dtype=self.dtype,
+                    )
+                )
                 continue
             caches.append(
                 PagedKVCache.empty(
@@ -303,17 +323,48 @@ class Lfm3Model(nn.Module):
         self.rope_sliding.ensure_capacity(max_seq_len, device=input_ids.device)
         self.rope_full.ensure_capacity(max_seq_len, device=input_ids.device)
 
+        q_len = input_ids.shape[1]
+        positions = kv_lens[:, None] + torch.arange(q_len, device=input_ids.device)
+        rope_sliding_cs = (
+            self.rope_sliding.cos_cached[positions].float().unsqueeze(1),
+            self.rope_sliding.sin_cached[positions].float().unsqueeze(1),
+        )
+        rope_full_cs = (
+            self.rope_full.cos_cached[positions].float().unsqueeze(1),
+            self.rope_full.sin_cached[positions].float().unsqueeze(1),
+        )
+        write_indices = None
+        if paged_kv_caches is not None:
+            full_cache = next(
+                (
+                    c
+                    for c, lt in zip(paged_kv_caches, self.layer_types)
+                    if c is not None and c.sliding_window is None
+                ),
+                None,
+            )
+            if full_cache is not None:
+                write_indices = (
+                    block_tables.gather(1, positions // full_cache.block_size).reshape(-1),
+                    (positions % full_cache.block_size).reshape(-1),
+                )
+
         x = self.tok_emb(input_ids)
 
         conv_index = 0
         for i, block in enumerate(self.blocks):
             if block.is_attention:
+                layer_cache = None if paged_kv_caches is None else paged_kv_caches[i]
+                is_sliding = block.layer_type == "sliding_attention"
                 x = block(
                     x,
                     block_tables=block_tables,
                     kv_lens=kv_lens,
-                    paged_kv_cache=paged_kv_caches[i],
+                    paged_kv_cache=layer_cache,
+                    conv_slots=conv_slots,
                     max_seq_len=max_seq_len,
+                    rope_cos_sin=rope_sliding_cs if is_sliding else rope_full_cs,
+                    write_indices=None if (layer_cache is not None and layer_cache.sliding_window is not None) else write_indices,
                 )
             else:
                 conv_state = (

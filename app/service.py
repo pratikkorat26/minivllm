@@ -329,9 +329,22 @@ class ChatCompletionService:
                         completion_tokens = event.generated_token_count or (
                             completion_tokens + 1
                         )
+                        if not request.stop:
+                            yield ChatCompletionEvent(
+                                request_id=completion_id,
+                                model=self.model_name,
+                                created=created,
+                                content=event.text,
+                            )
+                            continue
+                        prev_len = len(accumulated_text)
                         accumulated_text += event.text
-                        stop_index = _first_stop_index(
-                            accumulated_text, request.stop or []
+                        max_stop_len = max(len(s) for s in request.stop)
+                        search_start = max(0, prev_len - max_stop_len + 1)
+                        tail = accumulated_text[search_start:]
+                        rel_stop = _first_stop_index(tail, request.stop)
+                        stop_index = (
+                            None if rel_stop is None else search_start + rel_stop
                         )
                         stopped_by_sequence = stop_index is not None
                         safe_end = (
@@ -342,7 +355,7 @@ class ChatCompletionService:
                             hold = max(
                                 (
                                     length
-                                    for stop in request.stop or []
+                                    for stop in request.stop
                                     for length in range(1, len(stop))
                                     if accumulated_text.endswith(stop[:length])
                                 ),

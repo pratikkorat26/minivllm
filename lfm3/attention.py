@@ -104,7 +104,7 @@ class GroupedQueryAttention(nn.Module):
         self.sliding_window = sliding_window
         self.rope = rope
         self.use_fused_paged_attention = (
-            os.environ.get("LFM3_FUSED_PAGED_ATTENTION", "0") == "1"
+            os.environ.get("LFM3_FUSED_PAGED_ATTENTION", "1") == "1"
         )
         # None selects the context-dependent heuristic; 1 forces single-pass.
         self.paged_attention_num_splits = None
@@ -131,17 +131,48 @@ class GroupedQueryAttention(nn.Module):
         block_tables: torch.Tensor,
         kv_lens: torch.Tensor,
         paged_kv_cache: PagedKVCache,
+        write_indices: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> None:
         # Storage is [physical block, KV head, token in block, head dim].
         batch_size, groups, query_len, dim = k_new.shape
-        positions = kv_lens[:, None] + torch.arange(query_len, device=k_new.device)
-        ids = block_tables.gather(1, positions // paged_kv_cache.block_size)
-        offsets = positions % paged_kv_cache.block_size
-        paged_kv_cache.k_blocks[ids.reshape(-1), :, offsets.reshape(-1), :] = (
+        if write_indices is not None:
+            flat_ids, flat_offsets = write_indices
+        else:
+            positions = kv_lens[:, None] + torch.arange(query_len, device=k_new.device)
+            flat_ids = block_tables.gather(1, positions // paged_kv_cache.block_size).reshape(-1)
+            flat_offsets = (positions % paged_kv_cache.block_size).reshape(-1)
+        paged_kv_cache.k_blocks[flat_ids, :, flat_offsets, :] = (
             k_new.transpose(1, 2).reshape(-1, groups, dim)
         )
-        paged_kv_cache.v_blocks[ids.reshape(-1), :, offsets.reshape(-1), :] = (
+        paged_kv_cache.v_blocks[flat_ids, :, flat_offsets, :] = (
             v_new.transpose(1, 2).reshape(-1, groups, dim)
+        )
+
+    def _append_to_sliding_ring(
+        self,
+        *,
+        k_new: torch.Tensor,
+        v_new: torch.Tensor,
+        kv_lens: torch.Tensor,
+        paged_kv_cache: PagedKVCache,
+        slots: torch.Tensor,
+    ) -> None:
+        """Write only the latest ``min(q_len, window)`` tokens into per-slot ring buffers."""
+        W = paged_kv_cache.sliding_window
+        q_len = k_new.shape[2]
+        if q_len == 1:
+            pos = kv_lens % W
+            paged_kv_cache.k_blocks[slots, :, pos, :] = k_new[:, :, 0, :]
+            paged_kv_cache.v_blocks[slots, :, pos, :] = v_new[:, :, 0, :]
+            return
+        write_len = min(q_len, W)
+        src_start = q_len - write_len
+        positions = (kv_lens[:, None] + torch.arange(src_start, q_len, device=k_new.device)) % W
+        paged_kv_cache.k_blocks[slots[:, None], :, positions, :] = (
+            k_new[:, :, src_start:, :].transpose(1, 2)
+        )
+        paged_kv_cache.v_blocks[slots[:, None], :, positions, :] = (
+            v_new[:, :, src_start:, :].transpose(1, 2)
         )
 
     def _gather_batch_kv(
@@ -207,14 +238,17 @@ class GroupedQueryAttention(nn.Module):
         kv_lens: torch.Tensor,
         max_seq_len: int,
         dtype: torch.dtype,
+        rope_cos_sin: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         if self.rope is None:
             return q, k
-        # The model grows the cache before the layer loop; this is a cheap check.
-        self.rope.ensure_capacity(max_seq_len, device=q.device)
-        positions = kv_lens[:, None] + torch.arange(q.shape[2], device=q.device)
-        cos = self.rope.cos_cached[positions].float().unsqueeze(1)
-        sin = self.rope.sin_cached[positions].float().unsqueeze(1)
+        if rope_cos_sin is not None:
+            cos, sin = rope_cos_sin
+        else:
+            self.rope.ensure_capacity(max_seq_len, device=q.device)
+            positions = kv_lens[:, None] + torch.arange(q.shape[2], device=q.device)
+            cos = self.rope.cos_cached[positions].float().unsqueeze(1)
+            sin = self.rope.sin_cached[positions].float().unsqueeze(1)
         q_f = q.float()
         k_f = k.float()
         q_rot = (q_f * cos) + (rotate_half(q_f) * sin)
@@ -229,6 +263,9 @@ class GroupedQueryAttention(nn.Module):
         kv_lens: torch.Tensor,
         paged_kv_cache: PagedKVCache,
         max_seq_len: Optional[int] = None,
+        slots: Optional[torch.Tensor] = None,
+        rope_cos_sin: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        write_indices: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> torch.Tensor:
         batch_size, q_len, _ = x.shape
 
@@ -243,31 +280,53 @@ class GroupedQueryAttention(nn.Module):
 
         if max_seq_len is None:
             max_seq_len = int(kv_lens.max().item()) + q_len
-        q, k = self._apply_rope(q, k, kv_lens, max_seq_len, x.dtype)
+        q, k = self._apply_rope(q, k, kv_lens, max_seq_len, x.dtype, rope_cos_sin=rope_cos_sin)
 
-        self._append_to_paged_cache(
-            k_new=k,
-            v_new=v,
-            block_tables=block_tables,
-            kv_lens=kv_lens,
-            paged_kv_cache=paged_kv_cache,
-        )
-
-        if self.use_fused_paged_attention and can_use_paged_decode(q):
-            out = paged_decode_attention(
-                q,
-                cache=paged_kv_cache,
-                block_tables=block_tables,
-                kv_lens=kv_lens,
-                scale=self.scale,
-                sliding_window=self.sliding_window,
-                max_seq_len=max_seq_len,
-                num_splits=self.paged_attention_num_splits,
+        if paged_kv_cache.sliding_window is not None:
+            if slots is None:
+                slots = torch.arange(batch_size, device=x.device)
+            out = self._sliding_ring_attention(
+                q, k, v, kv_lens=kv_lens, paged_kv_cache=paged_kv_cache,
+                slots=slots, max_seq_len=max_seq_len,
             )
         else:
-            out = self._dense_attention(
-                q, block_tables, kv_lens, paged_kv_cache, max_seq_len
+            self._append_to_paged_cache(
+                k_new=k,
+                v_new=v,
+                block_tables=block_tables,
+                kv_lens=kv_lens,
+                paged_kv_cache=paged_kv_cache,
+                write_indices=write_indices,
             )
+
+            if (
+                q_len >= 64
+                and max_seq_len == q_len
+                and (self.sliding_window is None or q_len <= self.sliding_window)
+            ):
+                out = F.scaled_dot_product_attention(
+                    q, k, v, attn_mask=None, dropout_p=0.0,
+                    is_causal=True, scale=self.scale, enable_gqa=True,
+                )
+            elif (
+                self.use_fused_paged_attention
+                and can_use_paged_decode(q)
+                and max_seq_len >= 1024
+            ):
+                out = paged_decode_attention(
+                    q,
+                    cache=paged_kv_cache,
+                    block_tables=block_tables,
+                    kv_lens=kv_lens,
+                    scale=self.scale,
+                    sliding_window=self.sliding_window,
+                    max_seq_len=max_seq_len,
+                    num_splits=self.paged_attention_num_splits,
+                )
+            else:
+                out = self._dense_attention(
+                    q, block_tables, kv_lens, paged_kv_cache, max_seq_len
+                )
 
         out = out.transpose(1, 2).reshape(
             batch_size, q_len, self.num_heads, self.head_dim
@@ -275,6 +334,76 @@ class GroupedQueryAttention(nn.Module):
         gate = torch.sigmoid(self.gate_proj(x)).unsqueeze(-1)
         out = (out * gate).reshape(batch_size, q_len, -1)
         return self.o_proj(out)
+
+    def _sliding_ring_attention(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        *,
+        kv_lens: torch.Tensor,
+        paged_kv_cache: PagedKVCache,
+        slots: torch.Tensor,
+        max_seq_len: int,
+    ) -> torch.Tensor:
+        """Attention over bounded per-slot sliding-window ring buffers."""
+        batch_size, _, q_len, _ = q.shape
+        W = paged_kv_cache.sliding_window
+        seq_lens = kv_lens + q_len
+
+        if q_len == 1:
+            self._append_to_sliding_ring(
+                k_new=k, v_new=v, kv_lens=kv_lens,
+                paged_kv_cache=paged_kv_cache, slots=slots,
+            )
+            k_ring = paged_kv_cache.k_blocks[slots]
+            v_ring = paged_kv_cache.v_blocks[slots]
+            ring_idx = getattr(self, "_ring_idx", None)
+            if ring_idx is None or ring_idx.device != q.device or ring_idx.shape[-1] != W:
+                ring_idx = torch.arange(W, device=q.device).view(1, 1, W)
+                self._ring_idx = ring_idx
+            blocked = ring_idx >= seq_lens.view(batch_size, 1, 1)
+            mask = torch.zeros((batch_size, 1, 1, W), device=q.device, dtype=q.dtype)
+            mask = mask.masked_fill(blocked.unsqueeze(1), float("-inf"))
+            return F.scaled_dot_product_attention(
+                q, k_ring, v_ring, attn_mask=mask, dropout_p=0.0,
+                scale=self.scale, enable_gqa=True,
+            )
+
+        # Prefill (q_len > 1): read up to W-1 prior tokens before overwriting ring.
+        if max_seq_len > q_len:
+            prev_width = min(max_seq_len - q_len, W - 1)
+            prev_pos = kv_lens[:, None] - prev_width + torch.arange(prev_width, device=q.device)
+            ring_idx = prev_pos.clamp_min(0) % W
+            prev_k = paged_kv_cache.k_blocks[slots[:, None], :, ring_idx, :].transpose(1, 2)
+            prev_v = paged_kv_cache.v_blocks[slots[:, None], :, ring_idx, :].transpose(1, 2)
+            k_all = torch.cat([prev_k, k], dim=2)
+            v_all = torch.cat([prev_v, v], dim=2)
+            new_pos = kv_lens[:, None] + torch.arange(q_len, device=q.device)
+            k_pos = torch.cat([prev_pos, new_pos], dim=1).unsqueeze(1)
+        else:
+            k_all, v_all = k, v
+            k_pos = torch.arange(q_len, device=q.device).view(1, 1, q_len)
+
+        self._append_to_sliding_ring(
+            k_new=k, v_new=v, kv_lens=kv_lens,
+            paged_kv_cache=paged_kv_cache, slots=slots,
+        )
+
+        if max_seq_len == q_len and q_len <= W and q_len >= 64:
+            return F.scaled_dot_product_attention(
+                q, k_all, v_all, attn_mask=None, dropout_p=0.0,
+                is_causal=True, scale=self.scale, enable_gqa=True,
+            )
+
+        q_pos = (kv_lens.unsqueeze(1) + torch.arange(q_len, device=q.device).unsqueeze(0)).unsqueeze(-1)
+        blocked = (k_pos > q_pos) | (k_pos < q_pos - W + 1) | (k_pos < 0) | (k_pos >= seq_lens.view(batch_size, 1, 1))
+        mask = torch.zeros((batch_size, 1, q_len, k_all.shape[2]), device=q.device, dtype=q.dtype)
+        mask = mask.masked_fill(blocked.unsqueeze(1), float("-inf"))
+        return F.scaled_dot_product_attention(
+            q, k_all, v_all, attn_mask=mask, dropout_p=0.0,
+            scale=self.scale, enable_gqa=True,
+        )
 
     def _dense_attention(
         self, q, block_tables, kv_lens, paged_kv_cache, max_seq_len

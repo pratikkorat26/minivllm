@@ -191,3 +191,40 @@ def test_multistep_falls_back_for_history_dependent_sampling():
             await engine.shutdown()
 
     asyncio.run(run())
+
+
+def test_rep_penalty_mask_and_prompt_tensor_lifecycle():
+    from inference import SamplingConfig
+
+    async def run():
+        engine = LLMEngine(
+            FakeRuntime(strict_cache_check=False),
+            config(
+                prefill_chunk_size=2,
+                max_new_tokens=3,
+                sampling=SamplingConfig(temperature=0, repetition_penalty=1.5),
+            ),
+        )
+        executor = engine.executor
+        request = executor.build_request(
+            "life", "1 2 3 4", SamplingConfig(temperature=0, repetition_penalty=1.5), 3, 0
+        )
+        try:
+            executor.initialize(request)
+            assert "life" in executor._prompt_tensors
+            assert request.current_input.tolist() == [[1, 2]]
+            executor.prefill(request)
+            assert request.current_input.tolist() == [[3, 4]]
+            executor.prefill(request)
+            assert "life" not in executor._prompt_tensors
+            executor.decode([request])
+            mask = executor._rep_penalty_masks["life"]
+            for tok in (1, 2, 3, 4, 14):
+                assert mask[tok].item() is True
+            executor.finish(request, "max_new_tokens")
+            assert "life" not in executor._prompt_tensors
+            assert "life" not in executor._rep_penalty_masks
+        finally:
+            await engine.shutdown()
+
+    asyncio.run(run())

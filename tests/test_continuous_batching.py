@@ -2,7 +2,7 @@ import asyncio
 import time
 import unittest
 
-from inference import GenerateRequest, LLMEngine
+from inference import GenerateRequest, InferenceEngine, LLMEngine
 from test_round_robin import FakeRuntime, config
 
 
@@ -31,6 +31,7 @@ class ContinuousBatchingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_public_request_api_and_no_legacy_helpers(self):
         self.engine = LLMEngine(FakeRuntime(), config())
+        self.assertIsInstance(self.engine, InferenceEngine)
         result = await self.engine.generate(GenerateRequest("req", "1"))
         self.assertEqual(result.token_ids, [11, 21])
         self.assertFalse(hasattr(self.engine, "generate_many"))
