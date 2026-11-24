@@ -20,6 +20,7 @@ import psutil
 import torch
 
 from inference import EngineConfig, GenerateRequest, LLMEngine, SamplingConfig
+from lfm3.quantization import QUANTIZATION_CHOICES
 from runtime import DEFAULT_MODEL_ID, Lfm3Runtime, get_device
 
 
@@ -155,12 +156,126 @@ async def _run_single_context(
         }
 
 
+async def _run_batch_context(
+    engine: LLMEngine,
+    runtime: Lfm3Runtime,
+    target_tokens: int,
+    max_new_tokens: int,
+    sampling: SamplingConfig,
+    batch_size: int,
+    req_prefix: str,
+) -> Dict[str, Any]:
+    if batch_size == 1:
+        return await _run_single_context(
+            engine,
+            runtime,
+            target_tokens=target_tokens,
+            max_new_tokens=max_new_tokens,
+            sampling=sampling,
+            req_id=req_prefix,
+        )
+
+    prompt, actual_tokens = _build_exact_prompt(runtime.tokenizer, target_tokens)
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+
+    try:
+        t0 = time.perf_counter()
+        results = await asyncio.gather(
+            *(
+                engine.generate(
+                    GenerateRequest(
+                        request_id=f"{req_prefix}-{i}",
+                        prompt=prompt,
+                        sampling=sampling,
+                        max_new_tokens=max_new_tokens,
+                    )
+                )
+                for i in range(batch_size)
+            )
+        )
+        wall_s = time.perf_counter() - t0
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+        bad = [r for r in results if r.stop_reason in ("error", "capacity_exceeded")]
+        if bad:
+            return {
+                "target_context_tokens": target_tokens,
+                "prompt_tokens": actual_tokens,
+                "batch_size": batch_size,
+                "status": "oom" if "capacity" in (bad[0].error_message or "").lower() else "error",
+                "stop_reason": bad[0].stop_reason,
+                "error": bad[0].error_message,
+                "peak_vram_allocated_gb": (
+                    torch.cuda.max_memory_allocated() / (1024**3)
+                    if torch.cuda.is_available()
+                    else 0.0
+                ),
+                "host_ram_rss_gb": _rss_gb(),
+            }
+
+        total_gen = sum(len(r.token_ids) for r in results)
+        total_decode_steps = sum(r.decode_steps for r in results)
+        ttfts = [r.ttft_s for r in results if r.ttft_s is not None]
+        mean_ttft = sum(ttfts) / len(ttfts) if ttfts else 0.0
+        max_ttft = max(ttfts) if ttfts else 0.0
+        total_prompt_tokens = actual_tokens * batch_size
+        return {
+            "target_context_tokens": target_tokens,
+            "prompt_tokens": actual_tokens,
+            "batch_size": batch_size,
+            "total_generated_tokens": total_gen,
+            "total_decode_steps": total_decode_steps,
+            "wall_s": wall_s,
+            "status": "ok",
+            "ttft_s": mean_ttft,
+            "max_ttft_s": max_ttft,
+            "throughput_total_tok_per_s": (total_prompt_tokens + total_gen) / wall_s if wall_s > 0 else 0.0,
+            "throughput_gen_tok_per_s": total_gen / wall_s if wall_s > 0 else 0.0,
+            "prefill_tok_per_s": total_prompt_tokens / mean_ttft if mean_ttft > 0 else 0.0,
+            "decode_tok_per_s": total_gen / wall_s if wall_s > 0 else 0.0,
+            "peak_vram_allocated_gb": (
+                torch.cuda.max_memory_allocated() / (1024**3)
+                if torch.cuda.is_available()
+                else 0.0
+            ),
+            "peak_vram_reserved_gb": (
+                torch.cuda.max_memory_reserved() / (1024**3)
+                if torch.cuda.is_available()
+                else 0.0
+            ),
+            "host_ram_rss_gb": _rss_gb(),
+        }
+    except BaseException as exc:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+        return {
+            "target_context_tokens": target_tokens,
+            "prompt_tokens": actual_tokens,
+            "batch_size": batch_size,
+            "status": "oom" if _is_oom_error(exc) else "error",
+            "error": f"{type(exc).__name__}: {exc}",
+            "peak_vram_allocated_gb": (
+                torch.cuda.max_memory_allocated() / (1024**3)
+                if torch.cuda.is_available()
+                else 0.0
+            ),
+            "host_ram_rss_gb": _rss_gb(),
+        }
+
+
 async def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
     if args.fused_paged_attention:
         os.environ["LFM3_FUSED_PAGED_ATTENTION"] = "1"
 
     contexts = [int(c.strip()) for c in args.contexts.split(",") if c.strip()]
-    max_kv = args.max_kv_cache_tokens or max(32_768, max(contexts) + args.max_new_tokens + 64)
+    batch_size = max(1, int(args.batch_size))
+    max_kv = args.max_kv_cache_tokens or max(
+        32_768, batch_size * (max(contexts) + args.max_new_tokens + 32)
+    )
 
     device = get_device()
     gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
@@ -176,7 +291,7 @@ async def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
         use_instruct_model=False,
         device=device,
         quantization=args.quantization,
-        compile_model=args.compile,
+        compile_model=args.compile_model,
     )
     if torch.cuda.is_available():
         torch.cuda.synchronize()
@@ -191,14 +306,27 @@ async def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
         top_k=0,
         repetition_penalty=1.0,
     )
-    config = EngineConfig(
+    config_kwargs: Dict[str, Any] = dict(
         use_instruct_model=False,
         max_new_tokens=args.max_new_tokens,
         sampling=sampling,
         max_kv_cache_tokens=max_kv,
-        enable_cudnn_attention=args.cudnn_attention,
+        max_batch_tokens=args.max_batch_tokens,
+        decode_batch_size=max(4, batch_size),
+        max_concurrent_requests=max(16, batch_size),
+        max_queue_size=max(128, batch_size * 2),
+        enable_prefill_batching=args.enable_prefill_batching,
+        enable_cudnn_attention=args.enable_cudnn_attention,
         decode_steps_per_round=args.decode_steps_per_round,
     )
+    if args.enable_speculative:
+        import dataclasses
+        field_names = {f.name for f in dataclasses.fields(EngineConfig)}
+        if "enable_speculative_decoding" in field_names:
+            config_kwargs["enable_speculative_decoding"] = True
+        elif "enable_speculative" in field_names:
+            config_kwargs["enable_speculative"] = True
+    config = EngineConfig(**config_kwargs)
     engine = LLMEngine(runtime=runtime, config=config)
     kv_allocated_vram_gb = (
         torch.cuda.memory_allocated() / (1024**3) if torch.cuda.is_available() else 0.0
@@ -206,13 +334,14 @@ async def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
 
     # Warmup
     if args.warmup_tokens > 0:
-        await _run_single_context(
+        await _run_batch_context(
             engine,
             runtime,
             target_tokens=64,
             max_new_tokens=args.warmup_tokens,
             sampling=sampling,
-            req_id="warmup",
+            batch_size=min(batch_size, 4),
+            req_prefix="warmup",
         )
         gc.collect()
         if torch.cuda.is_available():
@@ -220,14 +349,18 @@ async def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
 
     results: List[Dict[str, Any]] = []
     for idx, ctx in enumerate(contexts):
-        print(f"Benchmarking context={ctx}, max_new_tokens={args.max_new_tokens}...", flush=True)
-        entry = await _run_single_context(
+        print(
+            f"Benchmarking context={ctx}, batch_size={batch_size}, max_new_tokens={args.max_new_tokens}...",
+            flush=True,
+        )
+        entry = await _run_batch_context(
             engine,
             runtime,
             target_tokens=ctx,
             max_new_tokens=args.max_new_tokens,
             sampling=sampling,
-            req_id=f"bench-{ctx}-{idx}",
+            batch_size=batch_size,
+            req_prefix=f"bench-{ctx}-{idx}",
         )
         results.append(entry)
         if entry["status"] == "ok":
@@ -257,7 +390,9 @@ async def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
             "quantization": args.quantization,
             "compile_model": runtime.compile_model,
             "enable_cudnn_attention": config.enable_cudnn_attention,
+            "enable_prefill_batching": config.enable_prefill_batching,
             "fused_paged_attention": bool(args.fused_paged_attention),
+            "batch_size": batch_size,
             "max_kv_cache_tokens": max_kv,
             "max_batch_tokens": config.max_batch_tokens,
             "decode_steps_per_round": config.decode_steps_per_round,
@@ -313,7 +448,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Benchmark MiniVLLM LFM3-1.7B")
     parser.add_argument("--model-id", default=DEFAULT_MODEL_ID)
     parser.add_argument(
-        "--quantization", choices=("none", "int8", "int4"), default="none"
+        "--quantization", choices=QUANTIZATION_CHOICES, default="none"
     )
     parser.add_argument(
         "--contexts",
@@ -323,10 +458,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--warmup-tokens", type=int, default=16)
     parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--max-batch-tokens", type=int, default=256)
     parser.add_argument("--max-kv-cache-tokens", type=int, default=None)
     parser.add_argument("--decode-steps-per-round", type=int, default=1)
-    parser.add_argument("--compile", action="store_true")
-    parser.add_argument("--cudnn-attention", action="store_true")
+    parser.add_argument("--compile-model", "--compile", dest="compile_model", action="store_true")
+    parser.add_argument("--enable-cudnn-attention", "--cudnn-attention", dest="enable_cudnn_attention", action="store_true")
+    parser.add_argument("--enable-prefill-batching", action="store_true")
+    parser.add_argument("--enable-speculative", action="store_true")
     parser.add_argument("--fused-paged-attention", action="store_true")
     parser.add_argument("--output", type=str, default=None, help="Output JSON path")
     parser.add_argument(

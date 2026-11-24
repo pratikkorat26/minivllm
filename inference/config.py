@@ -50,6 +50,8 @@ class EngineConfig:
     enable_incremental_detokenization: bool = True
     enable_prefix_cache: bool = False
     max_prefix_cache_entries: int = 64
+    enable_speculative_decoding: bool = False
+    speculative_num_tokens: int = 5
 
     def __post_init__(self):
         for name in (
@@ -61,6 +63,7 @@ class EngineConfig:
             "max_batch_tokens",
             "max_kv_cache_tokens",
             "kv_block_size",
+            "speculative_num_tokens",
         ):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive")

@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Tuple
 
+from lfm3.kernels import triton as _triton, triton_rms_norm
 from lfm3.paged_kv import PagedKVCache
 from lfm3.paged_attention import can_use_paged_decode, paged_decode_attention
 from lfm3.rope import rotate_half
@@ -66,6 +67,8 @@ class RMSNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(emb_dim))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if _triton is not None and x.is_cuda and not torch.compiler.is_compiling():
+            return triton_rms_norm(x, self.weight, self.eps)
         orig_dtype = x.dtype
         x_f = x.float()
         var = x_f.pow(2).mean(dim=-1, keepdim=True)
@@ -122,6 +125,14 @@ class GroupedQueryAttention(nn.Module):
 
         self.q_norm = RMSNorm(head_dim, eps=norm_eps)
         self.k_norm = RMSNorm(head_dim, eps=norm_eps)
+        if sliding_window is not None:
+            self.register_buffer(
+                "_ring_idx",
+                torch.arange(sliding_window, dtype=torch.long).view(1, 1, sliding_window),
+                persistent=False,
+            )
+        else:
+            self._ring_idx = None
 
     def _append_to_paged_cache(
         self,
@@ -325,7 +336,8 @@ class GroupedQueryAttention(nn.Module):
                 )
             else:
                 out = self._dense_attention(
-                    q, block_tables, kv_lens, paged_kv_cache, max_seq_len
+                    q, block_tables, kv_lens, paged_kv_cache, max_seq_len,
+                    k_new=k, v_new=v,
                 )
 
         out = out.transpose(1, 2).reshape(
@@ -358,10 +370,10 @@ class GroupedQueryAttention(nn.Module):
             )
             k_ring = paged_kv_cache.k_blocks[slots]
             v_ring = paged_kv_cache.v_blocks[slots]
-            ring_idx = getattr(self, "_ring_idx", None)
-            if ring_idx is None or ring_idx.device != q.device or ring_idx.shape[-1] != W:
+            if self._ring_idx is not None and self._ring_idx.shape[-1] == W and self._ring_idx.device == q.device:
+                ring_idx = self._ring_idx
+            else:
                 ring_idx = torch.arange(W, device=q.device).view(1, 1, W)
-                self._ring_idx = ring_idx
             blocked = ring_idx >= seq_lens.view(batch_size, 1, 1)
             mask = torch.zeros((batch_size, 1, 1, W), device=q.device, dtype=q.dtype)
             mask = mask.masked_fill(blocked.unsqueeze(1), float("-inf"))
@@ -406,10 +418,43 @@ class GroupedQueryAttention(nn.Module):
         )
 
     def _dense_attention(
-        self, q, block_tables, kv_lens, paged_kv_cache, max_seq_len
+        self, q, block_tables, kv_lens, paged_kv_cache, max_seq_len,
+        *, k_new: Optional[torch.Tensor] = None, v_new: Optional[torch.Tensor] = None,
     ):
         """Portable prefill/decode fallback using dense gathered KV and SDPA."""
-        q_len = q.shape[2]
+        batch_size, _, q_len, _ = q.shape
+        if (
+            batch_size == 1
+            and q_len >= 64
+            and self.sliding_window is None
+            and k_new is not None
+            and v_new is not None
+            and q.is_cuda
+            and q.dtype in (torch.float16, torch.bfloat16)
+            and not torch.compiler.is_compiling()
+            and max_seq_len > q_len
+        ):
+            kv_len = max_seq_len - q_len
+            k_pref, v_pref = self._gather_batch_kv(
+                block_tables=block_tables,
+                max_seq_len=kv_len,
+                paged_kv_cache=paged_kv_cache,
+            )
+            k_pref = k_pref.repeat_interleave(self.group_size, dim=1)
+            v_pref = v_pref.repeat_interleave(self.group_size, dim=1)
+            k_cur = k_new.repeat_interleave(self.group_size, dim=1)
+            v_cur = v_new.repeat_interleave(self.group_size, dim=1)
+            o1, lse1 = torch.ops.aten._scaled_dot_product_flash_attention(
+                q, k_pref, v_pref, dropout_p=0.0, is_causal=False, scale=self.scale
+            )[:2]
+            o2, lse2 = torch.ops.aten._scaled_dot_product_flash_attention(
+                q, k_cur, v_cur, dropout_p=0.0, is_causal=True, scale=self.scale
+            )[:2]
+            m = torch.maximum(lse1, lse2)
+            w1 = torch.exp(lse1 - m).unsqueeze(-1)
+            w2 = torch.exp(lse2 - m).unsqueeze(-1)
+            return ((o1.float() * w1 + o2.float() * w2) / (w1 + w2)).to(q.dtype)
+
         seq_lens = kv_lens + q_len
         key_positions = None
         if self.sliding_window is not None and max_seq_len > self.sliding_window:

@@ -217,3 +217,31 @@ def test_model_init_paged_kv_caches_bounds_sliding_layers():
     assert caches[1].k_blocks.shape == (3, 2, 4, 8)
     assert caches[2].sliding_window is None
     assert caches[2].k_blocks.shape == (8, 2, 2, 8)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_dense_split_prefill_matches_masked_attention(device):
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA unavailable")
+    torch.manual_seed(41)
+    attention = GroupedQueryAttention(16, 4, 2, 4, sliding_window=None).to(device).eval()
+    cache = PagedKVCache.empty(
+        num_blocks=8, num_kv_groups=2, block_size=16, head_dim=4,
+        device=torch.device(device), dtype=torch.float32,
+    )
+    cache.k_blocks.normal_()
+    cache.v_blocks.normal_()
+    tables = torch.arange(8, device=device).unsqueeze(0)
+    kv_lens = torch.tensor([32], device=device)
+    q = torch.randn(1, 4, 64, 4, device=device)
+    actual = attention._dense_attention(q, tables, kv_lens, cache, max_seq_len=96)
+
+    keys, values = attention._gather_batch_kv(
+        block_tables=tables, max_seq_len=96, paged_kv_cache=cache
+    )
+    q_pos = kv_lens[:, None, None] + torch.arange(64, device=device)[None, :, None]
+    k_pos = torch.arange(96, device=device)[None, None, :]
+    scores = (q @ keys.repeat_interleave(2, dim=1).transpose(-1, -2)) * attention.scale
+    scores.masked_fill_((k_pos > q_pos)[:, None], float("-inf"))
+    expected = scores.softmax(-1) @ values.repeat_interleave(2, dim=1)
+    torch.testing.assert_close(actual, expected, atol=2e-5, rtol=2e-5)

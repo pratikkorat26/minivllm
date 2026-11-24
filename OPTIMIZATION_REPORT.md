@@ -55,3 +55,30 @@ RUN_REAL_ENGINE_TESTS=1 /home/pratik/pyenvs/inference/.venv/bin/python -m pytest
 - **Quantization Improvements** (`lfm3/quantization.py`): Protected `gate_proj` in `int8` quantization and added `fp8` (`torch.float8_e4m3fn` + `torch._scaled_mm`) support.
 - **Executor, Sampling & Streaming Fast-Paths** (`inference/executor.py`, `inference/sampling/sampler.py`, `app/service.py`): Pre-uploaded prompt tensors for zero-copy prefill slicing, GPU boolean repetition-penalty masks, top-k-first nucleus sampling, and O(N) tail-bounded streaming stop-sequence scanning.
 - **Test Coverage** (`tests/test_lfm3_parity_gate.py` + `tests/test_*.py`): Added parity gate, bounded sliding-window KV, FP8, sampling fast-path, and streaming tail-scan tests.
+
+---
+
+## Phase 2: Triton Kernels, W4A16, Speculative Decoding & High-Concurrency
+
+Verified against `phase2_ceiling_baseline.json` (`0252408`) on the same RTX 4070 Laptop GPU (`max_batch_tokens=2048`, `decode_steps_per_round=8`, `max_new_tokens=64`, `temperature=0.0`):
+
+### Single-Request (`batch=1`) & High-Concurrency (`batch=64`) Results
+
+| Workload | Baseline TTFT (s) | Phase 2 TTFT (s) | TTFT Speedup | Baseline Decode (tok/s) | Phase 2 Decode (tok/s) | Decode Speedup | Phase 2 Peak VRAM (GB) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `b1` BF16 eager (`512`) | 0.058 | 0.050 | 1.16x | 53.9 | 54.2 | 1.01x | 3.68 |
+| `b1` BF16 eager (`8192`) | 0.984 | 0.824 | 1.19x | 43.1 | 62.2 | 1.44x | 3.80 |
+| `b1` `int4_w4a16` eager (`512`) | — | 0.166 | — | — | 73.1 | 1.36x vs BF16 | 1.82 |
+| `b1` `int4_w4a16` eager (`8192`) | — | 1.281 | — | — | 82.1 | 1.90x vs BF16 | 1.88 |
+| `b1` `int8` mixed-prec (`512`, `gs=32`) | — | 0.162 | — | — | **77.4** | **1.44x vs BF16** | 2.70 |
+| `b1` `int8` mixed-prec (`8192`, `gs=32`) | — | 1.299 | — | — | **71.0** | **1.65x vs BF16** | 2.74 |
+| `b64` `fp8` (`ctx=128`, prefill batching) | 1.234 | 0.552 | **2.24x** | 1,049.0 (agg) | **1,734.5** (agg) | **1.65x** | 2.66 |
+
+- **Phase 2 Test Suite (`RUN_REAL_ENGINE_TESTS=1 pytest -v`)**: **234 passed, 5 skipped** in `33.95s`.
+  - Includes `test_speculative_decoding_preserves_greedy_parity` (`enable_speculative_decoding=True`, `speculative_num_tokens=5`), confirming **100% bit-exact greedy parity** against `baseline_parity.json` with `ShortConv` and sliding-window ring-buffer rollback.
+  - **`int8` Mixed-Precision Parity (`group_size=32`, FP32 scales, `gate_proj` + `out_head` in BF16)**: **6/6 bit-exact greedy parity** vs `baseline_parity.json` (`short_math`, `short_fact`, `multi_turn`, `long_context`, `structured_json`, `tool_calling`, all `stop=eos`).
+  - Includes `test_triton_fused_kernels_match_reference`, `test_w4a16_linear_matches_float_linear`, `test_w4a16_model_keeps_tied_head_and_skips_gate_proj`, `test_dense_split_prefill_matches_masked_attention`, and `test_speculative_decoding_exact_parity_on_hybrid_model`.
+- **Key Phase 2 Additions**:
+  - `lfm3/kernels.py` & `lfm3/quantization.py`: Fused Triton `RMSNorm`, `SwiGLU`, single-step `ShortConv` decode + state update, `W4A16` (`group_size=64`) GEMV, and mixed-precision `W8A16` (`group_size=32` symmetric `int8` with FP32 scales, keeping `gate_proj` and tied `out_head` in BF16 — fixing the `torch._weight_int8pack_mm` hang and achieving 6/6 bit-exact parity).
+  - `lfm3/attention.py`: Registered `_ring_idx` as a non-persistent buffer (fixing CUDAGraphs overwrite under `compile_model=True`) and added FlashAttention-2 split-prefill in `_dense_attention`.
+  - `inference/executor.py` & `inference/scheduler/scheduler.py`: Lossless prompt-lookup/n-gram speculative decoding (`enable_speculative_decoding`) with `ShortConv`/ring-buffer rollback, and `PrefillBatchSelector` scaled to `max_concurrent_requests` (`16`).

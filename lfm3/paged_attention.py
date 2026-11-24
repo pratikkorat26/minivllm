@@ -147,8 +147,9 @@ def paged_decode_attention(
         # Short windows do not amortize a second launch. Small batches benefit
         # from more partitions to expose enough parallel work on long contexts.
         tokens_per_partition = 512 if batch * heads < 128 else 1024
+        max_splits = 32 if batch * heads <= 32 else 16
         num_splits = (
-            min(16, triton.cdiv(context_bound, tokens_per_partition))
+            min(max_splits, triton.cdiv(context_bound, tokens_per_partition))
             if context_bound > 1024
             else 1
         )

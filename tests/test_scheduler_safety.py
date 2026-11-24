@@ -35,6 +35,21 @@ def test_token_budget_config_rejects_invalid_limits():
         config(max_batch_tokens=0)
     with pytest.raises(ValueError):
         config(prefill_chunk_size=-1)
+    with pytest.raises(ValueError):
+        config(speculative_num_tokens=0)
+
+
+def test_prefill_selector_uses_max_concurrent_requests_cap():
+    async def run():
+        engine = LLMEngine(
+            FakeRuntime(), config(decode_batch_size=2, max_concurrent_requests=8)
+        )
+        try:
+            assert engine.scheduler.prefill_selector.max_batch_size == 8
+        finally:
+            await engine.shutdown()
+
+    asyncio.run(run())
 
 
 def test_long_prefill_does_not_starve_decode():

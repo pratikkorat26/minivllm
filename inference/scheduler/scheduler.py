@@ -52,7 +52,7 @@ class AsyncScheduler:
             selection_window=config.decode_selection_window,
         )
         self.prefill_selector = PrefillBatchSelector(
-            max_batch_size=config.decode_batch_size
+            max_batch_size=config.max_concurrent_requests
         )
         self.waiting: Deque[ScheduledRequest] = deque()
         self.prefill: Deque[ScheduledRequest] = deque()

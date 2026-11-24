@@ -228,3 +228,65 @@ def test_rep_penalty_mask_and_prompt_tensor_lifecycle():
             await engine.shutdown()
 
     asyncio.run(run())
+
+
+def test_speculative_decoding_exact_parity_on_hybrid_model():
+    from types import SimpleNamespace
+
+    from lfm3.model import LFM3_CONFIG_1_7B, Lfm3Model
+
+    torch.manual_seed(7)
+    model = Lfm3Model(
+        dict(
+            LFM3_CONFIG_1_7B,
+            vocab_size=32,
+            context_length=64,
+            emb_dim=16,
+            hidden_dim=32,
+            n_heads=2,
+            n_kv_groups=1,
+            head_dim=8,
+            n_layers=3,
+            layer_types=["conv", "sliding_attention", "full_attention"],
+            conv_kernel_size=3,
+            sliding_window=4,
+            dtype=torch.float32,
+        )
+    ).eval()
+
+    class HybridFakeRuntime:
+        def __init__(self):
+            self.device = torch.device("cpu")
+            self.model = model
+            self.tokenizer = SimpleNamespace(
+                eos_token_id=31,
+                encode=lambda text: [int(t) for t in text.split()],
+                decode=lambda ids, skip_special_tokens=False: " ".join(map(str, ids)),
+            )
+
+    async def run():
+        prompt = "1 2 3 4 5 1 2 3 4 5 1 2 3"
+        base_engine = LLMEngine(
+            HybridFakeRuntime(),
+            config(max_new_tokens=12, max_kv_cache_tokens=64, enable_speculative_decoding=False),
+        )
+        spec_engine = LLMEngine(
+            HybridFakeRuntime(),
+            config(
+                max_new_tokens=12,
+                max_kv_cache_tokens=64,
+                enable_speculative_decoding=True,
+                speculative_num_tokens=4,
+            ),
+        )
+        try:
+            expected = await base_engine.generate(GenerateRequest("base", prompt))
+            actual = await spec_engine.generate(GenerateRequest("spec", prompt))
+            assert actual.token_ids == expected.token_ids
+            assert actual.stop_reason == expected.stop_reason
+            assert spec_engine.stats().kv_blocks_used == 0
+        finally:
+            await base_engine.shutdown()
+            await spec_engine.shutdown()
+
+    asyncio.run(run())

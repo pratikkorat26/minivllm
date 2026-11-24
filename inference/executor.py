@@ -101,6 +101,7 @@ class PagedModelExecutor:
         self._token_copy_event = None
         self._prompt_tensors: dict[object, torch.Tensor] = {}
         self._rep_penalty_masks: dict[object, torch.Tensor] = {}
+        self._spec_ngrams: dict[object, tuple[dict, dict, list[int]]] = {}
         self.last_decode_step_count = 1
 
     def _mark_cache_addresses_static(self) -> None:
@@ -223,6 +224,7 @@ class PagedModelExecutor:
         self._release_conv_slot(request)
         self._prompt_tensors.pop(request.request_id, None)
         self._rep_penalty_masks.pop(request.request_id, None)
+        self._spec_ngrams.pop(request.request_id, None)
 
     def result(self, request: RequestState) -> GenerateResult:
         first = request.first_scheduled_at_s or request.created_at_s
@@ -327,6 +329,10 @@ class PagedModelExecutor:
         eligible = self._eligible(requests)
         if not eligible:
             return []
+        if self._can_speculate(eligible, max_steps):
+            spec_result = self._decode_speculative(eligible[0], on_device_work_queued)
+            if spec_result is not None:
+                return spec_result
         self.last_decode_step_count = self._decode_chunk_size(eligible)
         if max_steps is not None:
             self.last_decode_step_count = min(self.last_decode_step_count, max_steps)
@@ -346,6 +352,161 @@ class PagedModelExecutor:
             request.decode_steps += 1
             self._record_token(request, token, token_id)
         return eligible
+
+    def _can_speculate(
+        self, eligible: List[RequestState], max_steps: Optional[int]
+    ) -> bool:
+        if (
+            not self.config.enable_speculative_decoding
+            or len(eligible) != 1
+            or max_steps == 1
+        ):
+            return False
+        req = eligible[0]
+        if req.sampling.temperature != 0 or req.sampling.repetition_penalty != 1:
+            return False
+        remaining = min(
+            req.max_new_tokens - len(req.generated_ids),
+            self.context_limit() - req.live_kv_tokens,
+        )
+        return remaining >= 2
+
+    def _spec_draft(self, request: RequestState, max_draft: int) -> List[int]:
+        entry = self._spec_ngrams.get(request.request_id)
+        if entry is None:
+            trigrams: dict[tuple[int, int, int], int] = {}
+            bigrams: dict[tuple[int, int], int] = {}
+            tokens = list(request.prompt_token_ids) + list(request.generated_ids)
+            for idx in range(1, len(tokens) - 1):
+                bigrams[(tokens[idx - 1], tokens[idx])] = idx
+                if idx >= 2:
+                    trigrams[(tokens[idx - 2], tokens[idx - 1], tokens[idx])] = idx
+            entry = (trigrams, bigrams, tokens)
+            self._spec_ngrams[request.request_id] = entry
+        trigrams, bigrams, tokens = entry
+        n = len(tokens)
+        pos = None
+        if n >= 3:
+            pos = trigrams.get((tokens[-3], tokens[-2], tokens[-1]))
+        if pos is None and n >= 2:
+            pos = bigrams.get((tokens[-2], tokens[-1]))
+        if pos is None or pos + 1 >= n:
+            return []
+        return tokens[pos + 1 : pos + 1 + max_draft]
+
+    def _spec_update_ngrams(
+        self, request: RequestState, new_tokens: List[int]
+    ) -> None:
+        entry = self._spec_ngrams.get(request.request_id)
+        if entry is None:
+            return
+        trigrams, bigrams, tokens = entry
+        for tok in new_tokens:
+            n = len(tokens)
+            if n >= 2:
+                bigrams[(tokens[-2], tokens[-1])] = n - 1
+            if n >= 3:
+                trigrams[(tokens[-3], tokens[-2], tokens[-1])] = n - 1
+            tokens.append(tok)
+
+    def _decode_speculative(
+        self, request: RequestState, on_device_work_queued: Optional[Callable[[], None]]
+    ) -> Optional[List[RequestState]]:
+        remaining = min(
+            request.max_new_tokens - len(request.generated_ids),
+            self.context_limit() - request.live_kv_tokens,
+        )
+        max_draft = min(self.config.speculative_num_tokens, remaining - 1)
+        if max_draft <= 0:
+            return None
+        draft = self._spec_draft(request, max_draft)
+        if not draft:
+            return None
+        k = len(draft)
+        if not self.capacity.ensure_capacity(request, request.live_kv_tokens + 1 + k):
+            return None
+
+        started = time.perf_counter()
+        device = self.runtime.device
+        verify_input = torch.cat(
+            [
+                request.current_input,
+                torch.tensor(draft, dtype=torch.long, device=device).unsqueeze(0),
+            ],
+            dim=1,
+        )
+        orig_kv_len = request.live_kv_tokens
+        slot = (
+            self._conv_slots.get(request.request_id)
+            if self.conv_state_caches is not None
+            else None
+        )
+        saved_conv = (
+            [c[slot].clone() for c in self.conv_state_caches]
+            if slot is not None
+            else None
+        )
+        saved_sliding = []
+        if slot is not None:
+            for idx, cache in enumerate(self.paged_kv_caches):
+                if cache is not None and cache.sliding_window is not None:
+                    w = cache.sliding_window
+                    ring_pos = torch.tensor(
+                        [(orig_kv_len + i) % w for i in range(k + 1)],
+                        dtype=torch.long,
+                        device=device,
+                    )
+                    saved_sliding.append(
+                        (
+                            idx,
+                            ring_pos,
+                            cache.k_blocks[slot, :, ring_pos, :].clone(),
+                            cache.v_blocks[slot, :, ring_pos, :].clone(),
+                        )
+                    )
+
+        logits = self._forward(
+            [request],
+            compute_logits=True,
+            logits_last_only=False,
+            use_compiled=self.use_cuda_graph_buckets,
+            pad_decode_batch=True,
+            input_batch=verify_input,
+        )
+        pred_tensor = torch.argmax(logits[0], dim=-1)
+        pred_ids = self._copy_token_ids(pred_tensor, on_device_work_queued)
+
+        accepted = 0
+        while accepted < k and pred_ids[accepted] == draft[accepted]:
+            accepted += 1
+        emitted_ids = draft[:accepted] + [pred_ids[accepted]]
+
+        if accepted < k:
+            if saved_conv is not None and slot is not None:
+                for cache, orig in zip(self.conv_state_caches, saved_conv):
+                    cache[slot].copy_(orig)
+            for idx, ring_pos, orig_k, orig_v in saved_sliding:
+                cache = self.paged_kv_caches[idx]
+                cache.k_blocks[slot, :, ring_pos, :] = orig_k
+                cache.v_blocks[slot, :, ring_pos, :] = orig_v
+            request.live_kv_tokens = orig_kv_len
+            self._forward(
+                [request],
+                compute_logits=False,
+                use_compiled=self.use_cuda_graph_buckets,
+                pad_decode_batch=True,
+                input_batch=verify_input[:, : accepted + 1],
+            )
+
+        elapsed = time.perf_counter() - started
+        request.decode_time_s += elapsed
+        recorded = self._record_token_ids(request, emitted_ids)
+        request.decode_steps += recorded
+        self.last_decode_step_count = recorded
+        if request.status == "active":
+            request.current_input = pred_tensor[accepted : accepted + 1].unsqueeze(0)
+            self._spec_update_ngrams(request, emitted_ids)
+        return [request]
 
     def _decode_chunk_size(self, requests):
         """Bound exact greedy steps by fairness, reservation and context limits."""
@@ -527,6 +688,7 @@ class PagedModelExecutor:
         eligible: List[RequestState],
         *,
         compute_logits: bool = True,
+        logits_last_only: bool = True,
         use_compiled: bool = False,
         pad_decode_batch: bool = False,
         input_batch: Optional[torch.Tensor] = None,
@@ -594,14 +756,15 @@ class PagedModelExecutor:
                 kv_lens=lengths,
                 paged_kv_caches=self.paged_kv_caches,
                 compute_logits=compute_logits,
-                logits_last_only=True,
+                logits_last_only=logits_last_only,
                 max_seq_len=max_seq_len,
                 **conv_kwargs,
             )
         if padded_batch_size > active_batch_size:
             logits = logits[:active_batch_size]
+        seq_step = int(inputs.shape[1])
         for request in eligible:
-            request.live_kv_tokens += int(request.current_input.shape[1])
+            request.live_kv_tokens += seq_step
         return logits
 
     def _batch_metadata(self, eligible, padded_batch_size, width, *, cache_metadata):

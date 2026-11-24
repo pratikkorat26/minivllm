@@ -27,8 +27,8 @@ records compiled overlap results and GPU power telemetry.
 - LFM3 short-convolution layers with per-request conv state, mixed with full and
   sliding-window attention layers.
 - Last-position output projection; intermediate chunks skip the output head.
-- Weight-only **int8** quantization (skipping `gate_proj` for precision), **fp8**
-  (`torch._scaled_mm` on SM89+ CUDA), and experimental **int4 NF4** via bitsandbytes.
+- Weight-only **int8** mixed-precision quantization (`group_size=32`, FP32 scales, Triton `W8A16` GEMV, skipping `gate_proj` and tied `out_head` in BF16 for 6/6 bit-exact greedy parity), **int4_w4a16** (custom Triton `W4A16` GEMV), **fp8** (`torch._scaled_mm` on SM89+ CUDA), and experimental **int4 NF4** via bitsandbytes.
+- Fused Triton `RMSNorm`, `SwiGLU`, and single-step `ShortConv` decode kernels (`lfm3/kernels.py`), plus opt-in lossless n-gram speculative decoding (`EngineConfig.enable_speculative_decoding`).
 - Pre-uploaded prompt tensors for zero-copy prefill chunking, GPU boolean
   repetition-penalty masks, and top-k-first nucleus sampling.
 - One model worker, async JSON/SSE, bounded stream buffers, disconnect handling,
@@ -118,8 +118,9 @@ between rounds. See [execution and ownership](docs/architecture.md#optional-exac
 | Mode | Weights | CUDA path | Notes |
 |---|---|---|---|
 | `none` | BF16 | BF16 linear | Reference quality |
-| `int8` | Symmetric int8, per output channel | `torch._weight_int8pack_mm` | Skips `gate_proj`; recommended memory/quality tradeoff |
-| `fp8` | `float8_e4m3fn`, per output channel | `torch._scaled_mm` (SM89+) | Skips `gate_proj`; native FP8 tensor cores |
+| `int8` | Symmetric int8, `group_size=32`, FP32 scales | Triton `W8A16` GEMV (`gate_proj` & `out_head` BF16) | 6/6 bit-exact greedy parity; `71–77 tok/s`, ~2.7 GB VRAM |
+| `int4_w4a16` | Asymmetric uint4, `group_size=64` | Triton `W4A16` GEMV (`gate_proj` & `out_head` BF16) | Lowest VRAM (~1.88 GB), `82 tok/s` |
+| `fp8` | `float8_e4m3fn`, per output channel | `torch._scaled_mm` (SM89+) | Skips `gate_proj`; fast high-batch throughput |
 | `int4` | NF4 via bitsandbytes, double quantized | bitsandbytes 4-bit | Experimental; quality caveat |
 
 Embeddings and the tied output head remain BF16: the output head shares storage

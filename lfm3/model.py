@@ -294,6 +294,28 @@ class Lfm3Model(nn.Module):
             for _ in self.conv_layer_indices
         ]
 
+    @staticmethod
+    def snapshot_conv_state(
+        conv_state_caches: Optional[List[torch.Tensor]],
+        slots: torch.Tensor,
+    ) -> Optional[List[torch.Tensor]]:
+        """Capture per-slot ShortConv recurrent states for speculative rollback."""
+        if conv_state_caches is None:
+            return None
+        return [state[slots].clone() for state in conv_state_caches]
+
+    @staticmethod
+    def restore_conv_state(
+        conv_state_caches: Optional[List[torch.Tensor]],
+        slots: torch.Tensor,
+        snapshot: Optional[List[torch.Tensor]],
+    ) -> None:
+        """Restore per-slot ShortConv recurrent states on speculative rejection."""
+        if conv_state_caches is None or snapshot is None:
+            return
+        for state, saved in zip(conv_state_caches, snapshot):
+            state[slots] = saved
+
     def forward(
         self,
         input_ids: torch.Tensor,

@@ -130,10 +130,11 @@ sampled decode IDs transfer to CPU once per batch or bounded greedy chunk. Inter
 skip vocabulary projection.
 
 CUDA BF16 and CPU FP32 are supported without Hopper-specific instructions. The
-optional `int8` path stores per-output-channel int8 weights (skipping `gate_proj`)
-and uses PyTorch's weight-only int8 kernel on CUDA when available; `fp8` uses
-`torch.float8_e4m3fn` with `torch._scaled_mm` on SM89+ CUDA. `int4` uses
-bitsandbytes NF4 and is experimental.
+optional `int8` path uses mixed-precision per-group symmetric `int8` (`group_size=32`,
+FP32 scales, Triton `W8A16` GEMV on CUDA) while keeping `gate_proj` and the tied
+`out_head` in BF16 for bit-exact greedy parity; `int4_w4a16` uses `group_size=64`
+packed `uint8` weights with Triton `W4A16` GEMV; `fp8` uses `torch.float8_e4m3fn`
+with `torch._scaled_mm` on SM89+ CUDA; and `int4` uses bitsandbytes NF4 (experimental).
 
 Opt-in `torch.compile(mode="reduce-overhead")` owns CUDA graph capture/replay.
 The executor marks persistent KV and convolution buffers as static-address inputs

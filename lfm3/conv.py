@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from typing import Optional
 
+from lfm3.kernels import triton as _triton, triton_short_conv_decode
+
 
 class ShortConv(nn.Module):
     """LFM3 gated short convolution.
@@ -45,6 +47,24 @@ class ShortConv(nn.Module):
         slots: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         batch_size, seq_len, _ = x.shape
+        if (
+            seq_len == 1
+            and conv_state is not None
+            and _triton is not None
+            and x.is_cuda
+            and not torch.compiler.is_compiling()
+        ):
+            if slots is None:
+                slots = torch.arange(batch_size, device=x.device)
+            bcx = self.in_proj(x).squeeze(1)
+            y = triton_short_conv_decode(
+                bcx,
+                conv_state,
+                slots,
+                self.conv.weight[:, 0, :].contiguous(),
+                self.conv.bias,
+            )
+            return self.out_proj(y)
         bcx = self.in_proj(x).transpose(1, 2)
         gate_b, gate_c, gated_x = bcx.chunk(3, dim=1)
         gated = gate_b * gated_x

@@ -417,3 +417,34 @@ class TestLfm3RealParityGate(unittest.TestCase):
             self._run(engine_chunked.shutdown())
 
         self.assertEqual(chunked.token_ids, unchunked.token_ids)
+
+    def test_speculative_decoding_preserves_greedy_parity(self):
+        cases = [
+            c
+            for c in _build_parity_prompts()
+            if c["name"] in ("short_math", "long_context", "structured_json", "tool_calling")
+        ]
+        engine_spec = LLMEngine(
+            runtime=self.runtime,
+            config=EngineConfig(
+                use_instruct_model=True,
+                max_new_tokens=64,
+                decode_batch_size=4,
+                enable_speculative_decoding=True,
+                speculative_num_tokens=5,
+                sampling=_greedy_sampling(),
+            ),
+        )
+        try:
+            spec_results = {c["name"]: self._generate_case(c, engine=engine_spec) for c in cases}
+        finally:
+            self._run(engine_spec.shutdown())
+
+        baseline = json.loads(PARITY_BASELINE_PATH.read_text(encoding="utf-8"))
+        for name, res in spec_results.items():
+            self.assertIsNone(res.error_message, f"speculative {name} failed: {res.error_message}")
+            self.assertEqual(
+                res.token_ids,
+                baseline[name]["token_ids"],
+                f"Speculative decoding parity mismatch for {name}:\ngot:      {res.text!r}\nexpected: {baseline[name]['text']!r}",
+            )
