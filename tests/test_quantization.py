@@ -3,7 +3,7 @@ import torch
 from torch import nn
 
 from lfm3.model import Lfm3Model
-from lfm3.quantization import Fp8Linear, Int8Linear, W4A16Linear, quantize_model
+from lfm3.quantization import Fp8Linear, Int8Linear, quantize_model
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
@@ -126,44 +126,6 @@ def test_int4_model_runs():
             ids,
             block_tables=torch.tensor([[0, 1]], device="cuda"),
             kv_lens=torch.tensor([0], device="cuda"),
-            paged_kv_caches=cache,
-        )
-    assert logits.shape == (1, 1, 64)
-    assert torch.isfinite(logits).all()
-
-
-@pytest.mark.parametrize("device", ["cpu", "cuda"])
-def test_w4a16_linear_matches_float_linear(device):
-    if device == "cuda" and not torch.cuda.is_available():
-        pytest.skip("CUDA unavailable")
-    torch.manual_seed(0)
-    dtype = torch.float32 if device == "cpu" else torch.bfloat16
-    linear = nn.Linear(128, 64, bias=True).to(device=device, dtype=dtype)
-    with torch.no_grad():
-        linear.weight.normal_(0.0, 0.02)
-        linear.bias.normal_(0.0, 0.02)
-    quantized = W4A16Linear.from_linear(linear, group_size=64)
-    x = torch.randn(1, 1, 128, device=device, dtype=dtype)
-    expected = linear(x)
-    actual = quantized(x)
-    assert actual.shape == expected.shape
-    torch.testing.assert_close(actual, expected, atol=0.1, rtol=0.1)
-
-
-def test_w4a16_model_keeps_tied_head_and_skips_gate_proj():
-    torch.manual_seed(0)
-    model = Lfm3Model(_tiny_config()).eval()
-    model = quantize_model(model, "int4_w4a16")
-    assert model.out_head.weight is model.tok_emb.weight
-    assert isinstance(model.blocks[1].self_attn.gate_proj, nn.Linear)
-
-    ids = torch.tensor([[1, 2, 3, 4]])
-    cache = model.init_paged_kv_caches(num_blocks=4, block_size=2)
-    with torch.inference_mode():
-        logits = model(
-            ids,
-            block_tables=torch.tensor([[0, 1]]),
-            kv_lens=torch.tensor([0]),
             paged_kv_caches=cache,
         )
     assert logits.shape == (1, 1, 64)

@@ -27,7 +27,7 @@ records compiled overlap results and GPU power telemetry.
 - LFM3 short-convolution layers with per-request conv state, mixed with full and
   sliding-window attention layers.
 - Last-position output projection; intermediate chunks skip the output head.
-- Weight-only **int8** mixed-precision quantization (`group_size=32`, FP32 scales, Triton `W8A16` GEMV, skipping `gate_proj` and tied `out_head` in BF16 for 6/6 bit-exact greedy parity), **int4_w4a16** (custom Triton `W4A16` GEMV), **fp8** (`torch._scaled_mm` on SM89+ CUDA), and experimental **int4 NF4** via bitsandbytes.
+- Weight-only **int8** mixed-precision quantization (`group_size=32`, FP32 scales, Triton `W8A16` GEMV, skipping `gate_proj` and tied `out_head` in BF16 for near-BF16 quality), **fp8** (`torch._scaled_mm` on SM89+ CUDA), and experimental **int4 NF4** via bitsandbytes.
 - Fused Triton `RMSNorm`, `SwiGLU`, and single-step `ShortConv` decode kernels (`lfm3/kernels.py`), plus opt-in lossless n-gram speculative decoding (`EngineConfig.enable_speculative_decoding`).
 - Pre-uploaded prompt tensors for zero-copy prefill chunking, GPU boolean
   repetition-penalty masks, and top-k-first nucleus sampling.
@@ -119,7 +119,6 @@ between rounds. See [execution and ownership](docs/architecture.md#optional-exac
 |---|---|---|---|
 | `none` | BF16 | BF16 linear | Reference quality |
 | `int8` | Symmetric int8, `group_size=32`, FP32 scales | Triton `W8A16` GEMV (`gate_proj` & `out_head` BF16) | Near-BF16 quality (`PPL 42.53`, `86.25%` tool match), ~2.7 GB VRAM |
-| `int4_w4a16` | Asymmetric uint4, `group_size=64` | Triton `W4A16` GEMV (`gate_proj` & `out_head` BF16) | Lowest VRAM (~1.89 GB); lower quality (`PPL 44.76`, `57.5%` tool match) |
 | `fp8` | `float8_e4m3fn`, per output channel | `torch._scaled_mm` (SM89+) | Skips `gate_proj`; `PPL 42.60`, ~2.35–2.66 GB VRAM |
 | `int4` | NF4 via bitsandbytes, double quantized | bitsandbytes 4-bit | Experimental; quality caveat |
 

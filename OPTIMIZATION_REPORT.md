@@ -67,4 +67,4 @@ Evaluated across `44,554` teacher-forced tokens (`200` samples) and `200` greedy
 - **Automated Test Gate (`RUN_REAL_ENGINE_TESTS=1 pytest -v`)**: **234 passed, 5 skipped** (`tests/test_lfm3_parity_gate.py` + unit/regression/architecture suites).
 - **Speculative Decoding**: **200/200 (100%) bit-exact** with plain BF16 across all 200 prompts.
 - **Mixed-Precision `int8` (`gs=32`)**: Preserves function-calling tool match (`86.25%`) and JSON validity (`98.75%`) with negligible perplexity delta (`+0.0175`, KL `0.0036`) and `2.70–2.74 GB` VRAM (`6/6` bit-exact on `tests/test_lfm3_parity_gate.py` prompts).
-- **`int4_w4a16`**: Cuts VRAM to `1.82–1.89 GB` but shows clear quality degradation (`PPL 44.76`, `KL 0.2686`, `clean_eos 80.5%`, `func_tool_name_match 57.5%`).
+- **`int4_w4a16` (evaluated and removed)**: Cut VRAM to `1.82–1.89 GB` but showed clear quality degradation (`PPL 44.76`, `KL 0.2686`, `clean_eos 80.5%`, `func_tool_name_match 57.5%`), so it was removed from supported quantization modes.

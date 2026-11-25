@@ -98,50 +98,6 @@ if triton is not None:
         y = acc.to(b.dtype) * c
         tl.store(Out + row * H + cols, y, mask=mask)
 
-    @triton.jit
-    def _w4a16_gemv_kernel(
-        X,
-        QWeight,
-        Scales,
-        Zeros,
-        Out,
-        M,
-        N: tl.constexpr,
-        K: tl.constexpr,
-        GROUP_SIZE: tl.constexpr,
-        BLOCK_N: tl.constexpr,
-    ):
-        row = tl.program_id(0)
-        n_block = tl.program_id(1)
-        n_offs = n_block * BLOCK_N + tl.arange(0, BLOCK_N)
-        n_mask = n_offs < N
-
-        HALF_G: tl.constexpr = GROUP_SIZE // 2
-        K_HALF: tl.constexpr = K // 2
-        NUM_GROUPS: tl.constexpr = K // GROUP_SIZE
-
-        acc = tl.zeros((BLOCK_N,), dtype=tl.float32)
-        g_offs = tl.arange(0, HALF_G)
-
-        for g in range(NUM_GROUPS):
-            s = tl.load(Scales + n_offs * NUM_GROUPS + g, mask=n_mask, other=0.0).to(tl.float32)
-            z = tl.load(Zeros + n_offs * NUM_GROUPS + g, mask=n_mask, other=0.0).to(tl.float32)
-
-            qw_ptrs = QWeight + n_offs[:, None] * K_HALF + g * HALF_G + g_offs[None, :]
-            qw = tl.load(qw_ptrs, mask=n_mask[:, None], other=0)
-            lo = (qw & 0x0F).to(tl.float32)
-            hi = (qw >> 4).to(tl.float32)
-
-            x_base = X + row * K + g * GROUP_SIZE
-            x_even = tl.load(x_base + g_offs * 2).to(tl.float32)
-            x_odd = tl.load(x_base + g_offs * 2 + 1).to(tl.float32)
-
-            w_sum_x = tl.sum(lo * x_even[None, :] + hi * x_odd[None, :], axis=1)
-            x_sum = tl.sum(x_even + x_odd, axis=0)
-            acc += s * w_sum_x + z * x_sum
-
-        tl.store(Out + row * N + n_offs, acc, mask=n_mask)
-
 
 def triton_rms_norm(x: torch.Tensor, weight: torch.Tensor, eps: float) -> torch.Tensor:
     orig_shape = x.shape
@@ -200,37 +156,6 @@ def triton_short_conv_decode(
         BLOCK_C=BLOCK_C,
     )
     return out.unsqueeze(1)
-
-
-def triton_w4a16_gemv(
-    x: torch.Tensor,
-    qweight: torch.Tensor,
-    scales: torch.Tensor,
-    zeros: torch.Tensor,
-    group_size: int,
-) -> torch.Tensor:
-    M, K = x.shape
-    N = qweight.shape[0]
-    out = torch.empty((M, N), device=x.device, dtype=x.dtype)
-    if N <= 2048:
-        BLOCK_N, num_warps = 16, 4
-    else:
-        BLOCK_N, num_warps = 32, 2
-    grid = (M, triton.cdiv(N, BLOCK_N))
-    _w4a16_gemv_kernel[grid](
-        x,
-        qweight,
-        scales,
-        zeros,
-        out,
-        M,
-        N=N,
-        K=K,
-        GROUP_SIZE=group_size,
-        BLOCK_N=BLOCK_N,
-        num_warps=num_warps,
-    )
-    return out
 
 
 if triton is not None:

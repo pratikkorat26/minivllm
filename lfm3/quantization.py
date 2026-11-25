@@ -22,9 +22,9 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from lfm3.kernels import triton as _triton, triton_w4a16_gemv, triton_w8a16_gemv
+from lfm3.kernels import triton as _triton, triton_w8a16_gemv
 
-QUANTIZATION_CHOICES = ("none", "int8", "int4", "fp8", "int4_w4a16")
+QUANTIZATION_CHOICES = ("none", "int8", "int4", "fp8")
 
 
 class Int8Linear(nn.Module):
@@ -188,105 +188,6 @@ class Fp8Linear(nn.Module):
         return out.reshape(*original_shape[:-1], self.out_features)
 
 
-class W4A16Linear(nn.Module):
-    """Linear layer with asymmetric per-group 4-bit weights (uint8 packed) and Triton GEMV."""
-
-    def __init__(
-        self,
-        in_features: int,
-        out_features: int,
-        *,
-        group_size: int = 64,
-        bias: bool = True,
-        device: torch.device | None = None,
-        dtype: torch.dtype | None = None,
-    ):
-        super().__init__()
-        if in_features % 2 != 0:
-            raise ValueError("in_features must be even for W4A16Linear")
-        if in_features % group_size != 0:
-            group_size = in_features
-        self.in_features = in_features
-        self.out_features = out_features
-        self.group_size = group_size
-        num_groups = in_features // group_size
-        param_dtype = dtype or torch.bfloat16
-        self.register_buffer(
-            "qweight",
-            torch.empty(out_features, in_features // 2, dtype=torch.uint8, device=device),
-        )
-        self.register_buffer(
-            "scales",
-            torch.empty(out_features, num_groups, dtype=param_dtype, device=device),
-        )
-        self.register_buffer(
-            "zeros",
-            torch.empty(out_features, num_groups, dtype=param_dtype, device=device),
-        )
-        if bias:
-            self.bias = nn.Parameter(
-                torch.empty(out_features, device=device, dtype=param_dtype)
-            )
-        else:
-            self.register_parameter("bias", None)
-
-    @classmethod
-    @torch.no_grad()
-    def from_linear(cls, linear: nn.Linear, *, group_size: int = 64) -> "W4A16Linear":
-        gs = group_size if linear.in_features % group_size == 0 else linear.in_features
-        quantized = cls(
-            linear.in_features,
-            linear.out_features,
-            group_size=gs,
-            bias=linear.bias is not None,
-            device=linear.weight.device,
-            dtype=linear.weight.dtype,
-        )
-        w = linear.weight.float().reshape(linear.out_features, -1, gs)
-        w_min = w.amin(dim=-1)
-        w_max = w.amax(dim=-1)
-        scales = ((w_max - w_min) / 15.0).clamp_min(1e-8)
-        q = torch.round((w - w_min.unsqueeze(-1)) / scales.unsqueeze(-1)).clamp(0, 15).to(torch.uint8)
-        q_flat = q.reshape(linear.out_features, linear.in_features)
-        packed = q_flat[:, 0::2] | (q_flat[:, 1::2] << 4)
-        quantized.qweight.copy_(packed)
-        quantized.scales.copy_(scales.to(quantized.scales.dtype))
-        quantized.zeros.copy_(w_min.to(quantized.zeros.dtype))
-        if linear.bias is not None:
-            quantized.bias.copy_(linear.bias)
-        return quantized
-
-    def _dequantize(self, dtype: torch.dtype) -> torch.Tensor:
-        s = self.scales.to(dtype).unsqueeze(-1)
-        z = self.zeros.to(dtype).unsqueeze(-1)
-        qw = self.qweight.reshape(self.out_features, -1, self.group_size // 2)
-        lo = (qw & 0x0F).to(dtype) * s + z
-        hi = (qw >> 4).to(dtype) * s + z
-        return torch.stack((lo, hi), dim=-1).reshape(self.out_features, self.in_features)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        original_shape = x.shape
-        flat = x.reshape(-1, self.in_features)
-        if not flat.is_contiguous():
-            flat = flat.contiguous()
-
-        if (
-            _triton is not None
-            and flat.device.type == "cuda"
-            and flat.shape[0] <= 8
-            and self.in_features % 2 == 0
-        ):
-            out = triton_w4a16_gemv(
-                flat, self.qweight, self.scales, self.zeros, self.group_size
-            )
-        else:
-            out = F.linear(flat, self._dequantize(flat.dtype))
-
-        if self.bias is not None:
-            out = out + self.bias
-        return out.reshape(*original_shape[:-1], self.out_features)
-
-
 def _replace_linear_modules(
     module: nn.Module,
     replace: Callable[[nn.Linear], nn.Module],
@@ -351,20 +252,6 @@ def quantize_model_fp8(model: nn.Module) -> nn.Module:
     return model
 
 
-def quantize_model_w4a16(model: nn.Module, *, group_size: int = 64) -> nn.Module:
-    """Replace every non-tied Linear with a :class:`W4A16Linear` in place."""
-    skip_names = _tied_output_head_name(model)
-    _replace_linear_modules(
-        model,
-        lambda linear: W4A16Linear.from_linear(linear, group_size=group_size),
-        skip_names=skip_names,
-        skip_suffixes=("gate_proj",),
-    )
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    return model
-
-
 def quantize_model_int4(
     model: nn.Module,
     *,
@@ -419,8 +306,6 @@ def quantize_model(
         return quantize_model_int8(model)
     if quantization == "fp8":
         return quantize_model_fp8(model)
-    if quantization == "int4_w4a16":
-        return quantize_model_w4a16(model)
     if quantization == "int4":
         if not torch.cuda.is_available():
             raise ValueError("int4 quantization requires CUDA")

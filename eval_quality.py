@@ -446,7 +446,7 @@ def main() -> None:
     print("[eval] none_speculative:", report["modes"]["none_speculative"], flush=True)
 
     # 3. Quantized modes (keep bf16_runtime.model on GPU for exact KL & top-1)
-    for mode in ("int8", "fp8", "int4_w4a16"):
+    for mode in ("int8", "fp8"):
         print(f"[eval] Running {mode}...", flush=True)
         q_runtime = Lfm3Runtime(use_instruct_model=True, device=device, quantization=mode, compile_model=False)
         q_tf = _eval_teacher_forced(q_runtime.model, tf_samples, device, ref_model=bf16_runtime.model)

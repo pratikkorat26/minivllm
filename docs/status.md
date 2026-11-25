@@ -19,8 +19,8 @@ for full before/after tables and parity-gate results.
   - `BF16` (`none` / `none_speculative`): `PPL 42.52`, `90.0%` clean EOS, `98.75%` JSON valid, `86.25%` tool match.
   - `int8` (`gs=32`): `PPL 42.53` (`KL 0.0036`), `70.0%` exact match, `91.0%` clean EOS, `98.75%` JSON valid, `86.25%` tool match (`2.70–2.74 GB` VRAM).
   - `fp8`: `PPL 42.60` (`KL 0.0532`), `49.0%` exact match, `89.5%` clean EOS, `97.50%` JSON valid, `85.00%` tool match (`2.35–2.54 GB` VRAM).
-  - `int4_w4a16`: `PPL 44.76` (`KL 0.2686`), `26.5%` exact match, `80.5%` clean EOS, `57.50%` tool match (`1.82–1.89 GB` VRAM).
-- **Test Gate**: `RUN_REAL_ENGINE_TESTS=1 pytest -v` passes **234 tests** (5 opt-in skipped).
+  - `int4_w4a16` (evaluated and subsequently removed): `PPL 44.76` (`KL 0.2686`), `26.5%` exact match, `80.5%` clean EOS, `57.50%` tool match (`1.82–1.89 GB` VRAM) — removed from supported modes due to quality degradation.
+- **Test Gate**: `RUN_REAL_ENGINE_TESTS=1 pytest -v` passes **231 tests** (5 opt-in skipped).
 
 ## November 4: opt-in cuDNN attention
 
