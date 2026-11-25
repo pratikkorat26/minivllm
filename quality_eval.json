@@ -1,0 +1,103 @@
+{
+  "device": "cuda",
+  "gpu_name": "NVIDIA GeForce RTX 4070 Laptop GPU",
+  "teacher_forced_dataset": {
+    "seed": 42,
+    "total_samples": 200,
+    "max_tokens_per_sample": 256,
+    "sources": {
+      "fuvty/tau-bench-synthetic": 100,
+      "nvidia/Open-SWE-Traces": 100
+    },
+    "note": "Salesforce/xlam-function-calling-60k and Salesforce/APIGen-MT-5k only had README.md in ~/.cache/huggingface/hub (no local data shards); held-out set uses cached fuvty/tau-bench-synthetic and nvidia/Open-SWE-Traces."
+  },
+  "generation_prompts": {
+    "total": 200,
+    "function_calling": 80,
+    "coding_chat": 60,
+    "math_fact": 60
+  },
+  "modes": {
+    "none": {
+      "tokens_evaluated": 44554,
+      "mean_nll": 3.749885,
+      "perplexity": 42.5162,
+      "mean_kl_vs_bf16": 0.0,
+      "top1_agreement_vs_bf16": 1.0,
+      "prompts_evaluated": 200,
+      "exact_match_vs_bf16_rate": 1.0,
+      "exact_match_vs_bf16_count": "200/200",
+      "clean_eos_rate": 0.9,
+      "clean_eos_count": "180/200",
+      "func_prompts": 80,
+      "func_json_valid_rate": 0.9875,
+      "func_tool_name_match_rate": 0.8625,
+      "errors": 0
+    },
+    "none_speculative": {
+      "tokens_evaluated": 44554,
+      "mean_nll": 3.749885,
+      "perplexity": 42.5162,
+      "mean_kl_vs_bf16": 0.0,
+      "top1_agreement_vs_bf16": 1.0,
+      "prompts_evaluated": 200,
+      "exact_match_vs_bf16_rate": 1.0,
+      "exact_match_vs_bf16_count": "200/200",
+      "clean_eos_rate": 0.9,
+      "clean_eos_count": "180/200",
+      "func_prompts": 80,
+      "func_json_valid_rate": 0.9875,
+      "func_tool_name_match_rate": 0.8625,
+      "errors": 0
+    },
+    "int8": {
+      "tokens_evaluated": 44554,
+      "mean_nll": 3.750297,
+      "perplexity": 42.5337,
+      "mean_kl_vs_bf16": 0.003571,
+      "top1_agreement_vs_bf16": 0.973807,
+      "prompts_evaluated": 200,
+      "exact_match_vs_bf16_rate": 0.7,
+      "exact_match_vs_bf16_count": "140/200",
+      "clean_eos_rate": 0.91,
+      "clean_eos_count": "182/200",
+      "func_prompts": 80,
+      "func_json_valid_rate": 0.9875,
+      "func_tool_name_match_rate": 0.8625,
+      "errors": 0
+    },
+    "fp8": {
+      "tokens_evaluated": 44554,
+      "mean_nll": 3.751787,
+      "perplexity": 42.5971,
+      "mean_kl_vs_bf16": 0.053166,
+      "top1_agreement_vs_bf16": 0.909077,
+      "prompts_evaluated": 200,
+      "exact_match_vs_bf16_rate": 0.49,
+      "exact_match_vs_bf16_count": "98/200",
+      "clean_eos_rate": 0.895,
+      "clean_eos_count": "179/200",
+      "func_prompts": 80,
+      "func_json_valid_rate": 0.975,
+      "func_tool_name_match_rate": 0.85,
+      "errors": 0
+    },
+    "int4_w4a16": {
+      "tokens_evaluated": 44554,
+      "mean_nll": 3.801412,
+      "perplexity": 44.7644,
+      "mean_kl_vs_bf16": 0.268557,
+      "top1_agreement_vs_bf16": 0.790277,
+      "prompts_evaluated": 200,
+      "exact_match_vs_bf16_rate": 0.265,
+      "exact_match_vs_bf16_count": "53/200",
+      "clean_eos_rate": 0.805,
+      "clean_eos_count": "161/200",
+      "func_prompts": 80,
+      "func_json_valid_rate": 1.0,
+      "func_tool_name_match_rate": 0.575,
+      "errors": 0
+    }
+  },
+  "elapsed_s": 1053.16
+}

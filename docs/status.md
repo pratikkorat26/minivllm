@@ -10,8 +10,17 @@ for full before/after tables and parity-gate results.
 - **Default Triton paged decode for long contexts** (`lfm3/attention.py`): `LFM3_FUSED_PAGED_ATTENTION=1` is enabled by default for `max_seq_len >= 1024` (with precomputed RoPE/write indices in `Lfm3Model.forward`), boosting decode throughput at `16384` (`38.9 -> 51.7 tok/s`, `1.33x`) and `32768` (`30.5 -> 49.6 tok/s`, `1.63x`) while reducing `32768` total latency from `7.348s` to `6.544s`.
 - **Quantization** (`lfm3/quantization.py`): `int8` now skips `gate_proj` for precision parity, and `fp8` (`torch.float8_e4m3fn` + `torch._scaled_mm`) is supported on SM89+ CUDA.
 - **Executor, sampling & streaming fast-paths** (`inference/executor.py`, `inference/sampling/sampler.py`, `app/service.py`): pre-uploaded prompt tensors for zero-copy prefill slicing, GPU boolean repetition-penalty masks, top-k-first nucleus sampling, and O(N) tail-bounded streaming stop-sequence scanning.
-- **Validation**: `RUN_REAL_ENGINE_TESTS=1 pytest -v` passes **234 tests** (5 opt-in skipped), including bit-exact greedy parity against `baseline_parity.json` in `tests/test_lfm3_parity_gate.py` (with speculative decoding enabled) and 6/6 bit-exact greedy parity for mixed-precision `int8` (`group_size=32`, FP32 scales, `gate_proj` + `out_head` in BF16; `77.4 tok/s` at 512 / `71.0 tok/s` at 8K, `2.70–2.74 GB` VRAM).
-- **Phase 2 Triton Kernels, W4A16 & Speculative Decoding** (`lfm3/kernels.py`, `lfm3/quantization.py`, `lfm3/attention.py`, `inference/executor.py`, `inference/scheduler/scheduler.py`): Added fused Triton `RMSNorm`, `SwiGLU`, `ShortConv`, `W4A16` (`82.1 tok/s`, `1.88 GB`), and `W8A16` kernels; fixed CUDAGraphs `_ring_idx` overwrite; added FlashAttention-2 split-prefill; added lossless n-gram speculative decoding; and scaled `PrefillBatchSelector` to `16` (`batch=64` `fp8` aggregate decode `1,049 -> 1,734.5 tok/s`, mean TTFT `1.234s -> 0.552s`).
+- **Rigorous Same-Config Benchmarks (`rigorous_benchmark.json`, `9c23667` → `d25090f`, 5 repeats, `torch.cuda.synchronize()`)**:
+  - `BF16` eager `S1` (`mbt=256`): decode `24.1±1.6 → 38.4±5.3 tok/s` (`512`, `1.59x`), `29.5±0.9 → 41.6±8.9 tok/s` (`8K`, `1.41x`), `27.4±1.7 → 40.7±6.0 tok/s` (`32K`, `1.49x`); sync prefill also improved across all contexts.
+  - `BF16` eager `S8` (`mbt=2048`): decode `34.4±3.9 → 53.7±2.7 tok/s` (`512`, `1.56x`), `36.2±2.7 → 55.2±10.2 tok/s` (`8K`, `1.52x`), `28.9±2.4 → 51.6±6.7 tok/s` (`32K`, `1.79x`; TTFT `5.004±0.168s → 3.744±0.111s`, VRAM `4.36G → 4.04G`).
+  - `batch=64` `BF16` (`ctx=128`, `S8`, `enable_prefill_batching=True`): aggregate decode `1,269.5±85.9 → 1,505.7±80.7 tok/s` (`1.19x`), TTFT `0.582±0.016s → 0.530±0.017s`, VRAM `4.08G → 3.92G`.
+  - Speculative decoding (`enable_speculative_decoding=True`): **200/200 (100%) bit-exact** vs plain BF16 (`quality_eval.json`), with workload-dependent speedup (**up to 1.13x** on chat `46.7±3.4 → 52.6±5.7 tok/s`; `0.96x` on repetitive JSON `62.0±1.7 → 59.7±3.3 tok/s`).
+- **Quality Evaluation (`quality_eval.json`, `eval_quality.py`, 200 held-out samples / 200 greedy prompts)**:
+  - `BF16` (`none` / `none_speculative`): `PPL 42.52`, `90.0%` clean EOS, `98.75%` JSON valid, `86.25%` tool match.
+  - `int8` (`gs=32`): `PPL 42.53` (`KL 0.0036`), `70.0%` exact match, `91.0%` clean EOS, `98.75%` JSON valid, `86.25%` tool match (`2.70–2.74 GB` VRAM).
+  - `fp8`: `PPL 42.60` (`KL 0.0532`), `49.0%` exact match, `89.5%` clean EOS, `97.50%` JSON valid, `85.00%` tool match (`2.35–2.54 GB` VRAM).
+  - `int4_w4a16`: `PPL 44.76` (`KL 0.2686`), `26.5%` exact match, `80.5%` clean EOS, `57.50%` tool match (`1.82–1.89 GB` VRAM).
+- **Test Gate**: `RUN_REAL_ENGINE_TESTS=1 pytest -v` passes **234 tests** (5 opt-in skipped).
 
 ## November 4: opt-in cuDNN attention
 

@@ -118,9 +118,9 @@ between rounds. See [execution and ownership](docs/architecture.md#optional-exac
 | Mode | Weights | CUDA path | Notes |
 |---|---|---|---|
 | `none` | BF16 | BF16 linear | Reference quality |
-| `int8` | Symmetric int8, `group_size=32`, FP32 scales | Triton `W8A16` GEMV (`gate_proj` & `out_head` BF16) | 6/6 bit-exact greedy parity; `71–77 tok/s`, ~2.7 GB VRAM |
-| `int4_w4a16` | Asymmetric uint4, `group_size=64` | Triton `W4A16` GEMV (`gate_proj` & `out_head` BF16) | Lowest VRAM (~1.88 GB), `82 tok/s` |
-| `fp8` | `float8_e4m3fn`, per output channel | `torch._scaled_mm` (SM89+) | Skips `gate_proj`; fast high-batch throughput |
+| `int8` | Symmetric int8, `group_size=32`, FP32 scales | Triton `W8A16` GEMV (`gate_proj` & `out_head` BF16) | Near-BF16 quality (`PPL 42.53`, `86.25%` tool match), ~2.7 GB VRAM |
+| `int4_w4a16` | Asymmetric uint4, `group_size=64` | Triton `W4A16` GEMV (`gate_proj` & `out_head` BF16) | Lowest VRAM (~1.89 GB); lower quality (`PPL 44.76`, `57.5%` tool match) |
+| `fp8` | `float8_e4m3fn`, per output channel | `torch._scaled_mm` (SM89+) | Skips `gate_proj`; `PPL 42.60`, ~2.35–2.66 GB VRAM |
 | `int4` | NF4 via bitsandbytes, double quantized | bitsandbytes 4-bit | Experimental; quality caveat |
 
 Embeddings and the tied output head remain BF16: the output head shares storage

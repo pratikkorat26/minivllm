@@ -11,6 +11,8 @@ import gc
 import json
 import os
 import resource
+import statistics
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -33,8 +35,65 @@ def _max_rss_gb() -> float:
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024**2)
 
 
-def _build_exact_prompt(tokenizer: Any, target_tokens: int) -> tuple[str, int]:
-    """Construct a deterministic prompt that encodes to ~target_tokens."""
+def _gpu_telemetry() -> Dict[str, Any]:
+    info: Dict[str, Any] = {}
+    try:
+        out = subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=clocks.sm,clocks.mem,temperature.gpu,power.draw,clocks_throttle_reasons.active",
+                "--format=csv,noheader,nounits",
+            ],
+            text=True,
+            timeout=2,
+        ).strip()
+        parts = [p.strip() for p in out.split(",")]
+        if len(parts) >= 5:
+            info["sm_clock_mhz"] = int(parts[0]) if parts[0].isdigit() else parts[0]
+            info["mem_clock_mhz"] = int(parts[1]) if parts[1].isdigit() else parts[1]
+            info["temp_c"] = int(parts[2]) if parts[2].isdigit() else parts[2]
+            try:
+                info["power_w"] = float(parts[3])
+            except ValueError:
+                info["power_w"] = parts[3]
+            info["throttle_reasons"] = parts[4]
+    except Exception as exc:
+        info["nvidia_smi_error"] = str(exc)
+    try:
+        info["power_profile"] = subprocess.check_output(
+            ["powerprofilesctl", "get"], text=True, timeout=2
+        ).strip()
+    except Exception:
+        pass
+    return info
+
+
+def _build_exact_prompt(
+    tokenizer: Any, target_tokens: int, prompt_type: str = "text"
+) -> tuple[str, int]:
+    """Construct a deterministic prompt of ~target_tokens for text, chat, or json."""
+    if prompt_type == "chat":
+        prompt = (
+            "<|startoftext|><|im_start|>user\n"
+            "Explain in clear technical detail how paged KV caching and sliding-window "
+            "attention reduce memory bandwidth during autoregressive LLM decoding, "
+            "and compare them to standard dense attention.<|im_end|>\n"
+            "<|im_start|>assistant\n"
+        )
+        return prompt, len(tokenizer.encode(prompt))
+    if prompt_type == "json":
+        record = (
+            '{"service": "payments-api", "region": "us-east-1", "status": "healthy", '
+            '"latency_ms": 12.4, "retries": 0, "version": "2.4.1"}, '
+        )
+        prompt = (
+            "<|startoftext|><|im_start|>user\n"
+            "Repeat and extend this exact JSON array by adding 5 more identical-schema entries:\n"
+            "[" + (record * 6).rstrip(", ") + "]\n"
+            "<|im_end|>\n<|im_start|>assistant\n["
+        )
+        return prompt, len(tokenizer.encode(prompt))
+
     unit = "The quick brown fox jumps over the lazy dog in a quiet forest. "
     unit_ids = tokenizer.encode(unit)
     reps = max(1, (target_tokens // max(1, len(unit_ids))) + 4)
@@ -59,6 +118,59 @@ def _is_oom_error(exc: BaseException) -> bool:
     return "out of memory" in msg or "cuda error: out of memory" in msg
 
 
+class _SyncTimer:
+    """Measures true GPU-synchronized prefill, TTFT, and decode time without touching engine code."""
+
+    def __init__(self, executor: Any) -> None:
+        self.executor = executor
+        self._orig_prefill = executor.prefill_batch
+        self._orig_decode = executor.decode
+        self.prefill_s = 0.0
+        self.decode_s = 0.0
+        self.first_token_wall_s: Optional[float] = None
+        self.request_start_s: float = 0.0
+
+    def reset(self) -> None:
+        self.prefill_s = 0.0
+        self.decode_s = 0.0
+        self.first_token_wall_s = None
+        self.request_start_s = time.perf_counter()
+
+    def install(self) -> None:
+        orig_prefill = self._orig_prefill
+        orig_decode = self._orig_decode
+
+        def wrapped_prefill(*args, **kwargs):
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            t0 = time.perf_counter()
+            out = orig_prefill(*args, **kwargs)
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            t1 = time.perf_counter()
+            self.prefill_s += t1 - t0
+            if out and self.first_token_wall_s is None:
+                self.first_token_wall_s = t1
+            return out
+
+        def wrapped_decode(*args, **kwargs):
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            t0 = time.perf_counter()
+            out = orig_decode(*args, **kwargs)
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            self.decode_s += time.perf_counter() - t0
+            return out
+
+        self.executor.prefill_batch = wrapped_prefill
+        self.executor.decode = wrapped_decode
+
+    def uninstall(self) -> None:
+        self.executor.prefill_batch = self._orig_prefill
+        self.executor.decode = self._orig_decode
+
+
 async def _run_single_context(
     engine: LLMEngine,
     runtime: Lfm3Runtime,
@@ -66,11 +178,15 @@ async def _run_single_context(
     max_new_tokens: int,
     sampling: SamplingConfig,
     req_id: str,
+    prompt_type: str = "text",
+    sync_timer: Optional[_SyncTimer] = None,
 ) -> Dict[str, Any]:
-    prompt, actual_tokens = _build_exact_prompt(runtime.tokenizer, target_tokens)
+    prompt, actual_tokens = _build_exact_prompt(runtime.tokenizer, target_tokens, prompt_type)
     if torch.cuda.is_available():
         torch.cuda.synchronize()
         torch.cuda.reset_peak_memory_stats()
+    if sync_timer is not None:
+        sync_timer.reset()
 
     try:
         res = await engine.generate(
@@ -106,7 +222,7 @@ async def _run_single_context(
         gen_tokens = len(res.token_ids)
         prefill_tps = actual_tokens / res.prefill_s if res.prefill_s > 0 else 0.0
         decode_tps = res.decode_steps / res.decode_s if res.decode_s > 0 else 0.0
-        return {
+        out: Dict[str, Any] = {
             "target_context_tokens": target_tokens,
             "prompt_tokens": actual_tokens,
             "generated_tokens": gen_tokens,
@@ -133,6 +249,22 @@ async def _run_single_context(
             ),
             "host_ram_rss_gb": _rss_gb(),
         }
+        if sync_timer is not None:
+            sync_ttft = (
+                sync_timer.first_token_wall_s - sync_timer.request_start_s
+                if sync_timer.first_token_wall_s is not None
+                else res.ttft_s
+            )
+            out["sync_ttft_s"] = sync_ttft
+            out["sync_prefill_s"] = sync_timer.prefill_s
+            out["sync_prefill_tok_per_s"] = (
+                actual_tokens / sync_timer.prefill_s if sync_timer.prefill_s > 0 else 0.0
+            )
+            out["sync_decode_s"] = sync_timer.decode_s
+            out["sync_decode_tok_per_s"] = (
+                res.decode_steps / sync_timer.decode_s if sync_timer.decode_s > 0 else 0.0
+            )
+        return out
     except BaseException as exc:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -164,6 +296,8 @@ async def _run_batch_context(
     sampling: SamplingConfig,
     batch_size: int,
     req_prefix: str,
+    prompt_type: str = "text",
+    sync_timer: Optional[_SyncTimer] = None,
 ) -> Dict[str, Any]:
     if batch_size == 1:
         return await _run_single_context(
@@ -173,12 +307,16 @@ async def _run_batch_context(
             max_new_tokens=max_new_tokens,
             sampling=sampling,
             req_id=req_prefix,
+            prompt_type=prompt_type,
+            sync_timer=sync_timer,
         )
 
-    prompt, actual_tokens = _build_exact_prompt(runtime.tokenizer, target_tokens)
+    prompt, actual_tokens = _build_exact_prompt(runtime.tokenizer, target_tokens, prompt_type)
     if torch.cuda.is_available():
         torch.cuda.synchronize()
         torch.cuda.reset_peak_memory_stats()
+    if sync_timer is not None:
+        sync_timer.reset()
 
     try:
         t0 = time.perf_counter()
@@ -267,6 +405,56 @@ async def _run_batch_context(
         }
 
 
+def _summarize_metric(vals: List[float]) -> Dict[str, float]:
+    if not vals:
+        return {"mean": 0.0, "stdev": 0.0, "min": 0.0, "max": 0.0}
+    return {
+        "mean": statistics.mean(vals),
+        "stdev": statistics.stdev(vals) if len(vals) > 1 else 0.0,
+        "min": min(vals),
+        "max": max(vals),
+    }
+
+
+def _aggregate_repeats(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if len(runs) == 1:
+        return runs[0]
+    bad = [r for r in runs if r.get("status") != "ok"]
+    if bad:
+        return bad[0]
+    base = dict(runs[0])
+    metric_keys = [
+        "ttft_s",
+        "prefill_s",
+        "prefill_tok_per_s",
+        "decode_s",
+        "decode_tok_per_s",
+        "tpot_s",
+        "total_latency_s",
+        "peak_vram_allocated_gb",
+        "sync_ttft_s",
+        "sync_prefill_s",
+        "sync_prefill_tok_per_s",
+        "sync_decode_s",
+        "sync_decode_tok_per_s",
+        "wall_s",
+        "throughput_gen_tok_per_s",
+        "throughput_total_tok_per_s",
+    ]
+    stats: Dict[str, Dict[str, float]] = {}
+    for k in metric_keys:
+        if k in runs[0] and runs[0][k] is not None:
+            vals = [float(r[k]) for r in runs if r.get(k) is not None]
+            if vals:
+                s = _summarize_metric(vals)
+                stats[k] = s
+                base[k] = s["mean"]
+    base["repeats"] = len(runs)
+    base["stats"] = stats
+    base["raw_runs"] = runs
+    return base
+
+
 async def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
     if args.fused_paged_attention:
         os.environ["LFM3_FUSED_PAGED_ATTENTION"] = "1"
@@ -328,40 +516,59 @@ async def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
             config_kwargs["enable_speculative"] = True
     config = EngineConfig(**config_kwargs)
     engine = LLMEngine(runtime=runtime, config=config)
+    sync_timer = _SyncTimer(engine.executor) if args.sync_timing else None
+    if sync_timer is not None:
+        sync_timer.install()
     kv_allocated_vram_gb = (
         torch.cuda.memory_allocated() / (1024**3) if torch.cuda.is_available() else 0.0
     )
+    gpu_telemetry_start = _gpu_telemetry()
 
-    # Warmup
-    if args.warmup_tokens > 0:
-        await _run_batch_context(
-            engine,
-            runtime,
-            target_tokens=64,
-            max_new_tokens=args.warmup_tokens,
-            sampling=sampling,
-            batch_size=min(batch_size, 4),
-            req_prefix="warmup",
-        )
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+    # Warmup waves
+    if args.warmup_tokens > 0 and args.warmup_runs > 0:
+        for w in range(args.warmup_runs):
+            await _run_batch_context(
+                engine,
+                runtime,
+                target_tokens=64,
+                max_new_tokens=args.warmup_tokens,
+                sampling=sampling,
+                batch_size=min(batch_size, 4),
+                req_prefix=f"warmup-{w}",
+                prompt_type=args.prompt_type,
+                sync_timer=None,
+            )
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     results: List[Dict[str, Any]] = []
     for idx, ctx in enumerate(contexts):
         print(
-            f"Benchmarking context={ctx}, batch_size={batch_size}, max_new_tokens={args.max_new_tokens}...",
+            f"Benchmarking context={ctx}, batch_size={batch_size}, repeats={args.repeats}, max_new_tokens={args.max_new_tokens}...",
             flush=True,
         )
-        entry = await _run_batch_context(
-            engine,
-            runtime,
-            target_tokens=ctx,
-            max_new_tokens=args.max_new_tokens,
-            sampling=sampling,
-            batch_size=batch_size,
-            req_prefix=f"bench-{ctx}-{idx}",
-        )
+        runs: List[Dict[str, Any]] = []
+        for rep in range(max(1, args.repeats)):
+            r_entry = await _run_batch_context(
+                engine,
+                runtime,
+                target_tokens=ctx,
+                max_new_tokens=args.max_new_tokens,
+                sampling=sampling,
+                batch_size=batch_size,
+                req_prefix=f"bench-{ctx}-{idx}-r{rep}",
+                prompt_type=args.prompt_type,
+                sync_timer=sync_timer,
+            )
+            runs.append(r_entry)
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            if r_entry.get("status") != "ok":
+                break
+        entry = _aggregate_repeats(runs)
+        entry["gpu_telemetry"] = _gpu_telemetry()
         results.append(entry)
         if entry["status"] == "ok":
             print(
@@ -373,10 +580,10 @@ async def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
             )
         else:
             print(f"  -> {entry['status'].upper()}: {entry.get('error')}", flush=True)
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
+    if sync_timer is not None:
+        sync_timer.uninstall()
+    gpu_telemetry_end = _gpu_telemetry()
     await engine.shutdown()
 
     return {
@@ -391,7 +598,12 @@ async def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
             "compile_model": runtime.compile_model,
             "enable_cudnn_attention": config.enable_cudnn_attention,
             "enable_prefill_batching": config.enable_prefill_batching,
+            "enable_speculative": bool(args.enable_speculative),
             "fused_paged_attention": bool(args.fused_paged_attention),
+            "sync_timing": bool(args.sync_timing),
+            "prompt_type": args.prompt_type,
+            "warmup_runs": args.warmup_runs,
+            "repeats": args.repeats,
             "batch_size": batch_size,
             "max_kv_cache_tokens": max_kv,
             "max_batch_tokens": config.max_batch_tokens,
@@ -402,6 +614,8 @@ async def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
             "weights_vram_gb": round(weights_vram_gb, 3),
             "weights_plus_kv_vram_gb": round(kv_allocated_vram_gb, 3),
             "peak_host_ram_gb": round(_max_rss_gb(), 3),
+            "gpu_telemetry_start": gpu_telemetry_start,
+            "gpu_telemetry_end": gpu_telemetry_end,
         },
         "results": results,
     }
@@ -457,6 +671,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--warmup-tokens", type=int, default=16)
+    parser.add_argument("--warmup-runs", type=int, default=1)
+    parser.add_argument("--repeats", type=int, default=1)
+    parser.add_argument(
+        "--prompt-type", choices=("text", "chat", "json"), default="text"
+    )
+    parser.add_argument("--sync-timing", action="store_true")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--max-batch-tokens", type=int, default=256)
